@@ -16,6 +16,11 @@ const boutiqueSchema = new mongoose.Schema({
       image: String, // URL for item image
     },
   ],
+  role:{
+    type : String,
+    enum : ['admin', 'Boutique', 'User'],
+    default : 'Boutique'
+  },
   orders: [
     {
       userId: mongoose.Schema.Types.ObjectId,

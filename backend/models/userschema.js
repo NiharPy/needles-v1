@@ -10,6 +10,11 @@ const userSchema = new mongoose.Schema({
     state: String,
     postalCode: String,
   },
+  role:{
+    type : String,
+    enum : ['admin', 'Boutique', 'User'],
+    default : 'User'
+  },
   measurements: {
     chest: Number,
     waist: Number,

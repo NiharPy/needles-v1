@@ -53,13 +53,13 @@ const boutiqueSearch = async function(req,res){
             $or:[
                 query?{name:{$regex:query,$options:'i'}} : null,
                 location?{"location.address": {$regex:location,$options:'i'}} : null,
-                query?{"catalogue.items" : {$regex:query,$options:'i'}} : null,
+                query?{"catalogue.itemName" : {$regex:query,$options:'i'}} : null,
             ].filter(Boolean),
         };
 
-        console.log('Search conditions:', searchconditions);
-        
-        const Boutique_found = await BoutiqueModel.find(searchconditions);
+        const fieldsToSelect = 'name location.address catalogue.itemName catalogue.price'
+
+        const Boutique_found = await BoutiqueModel.find(searchconditions, fieldsToSelect);
 
         res.status(200).send(Boutique_found);
 
