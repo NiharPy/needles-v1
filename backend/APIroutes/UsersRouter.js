@@ -1,9 +1,14 @@
-import express from "express"
+import express from 'express';
+import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controller.js';
+import { CreateUser } from '../controllers/user-controller.js';
 const router = express.Router();
 
-const UsersRouter = router.get("/",function(req,res){
-    res.send("Hey");
+router.get("/", (req, res) => {
+    res.send("Welcome to the Home page!");
 });
 
+router.route("/signup").post(CreateUser);
 
-export default UsersRouter;
+router.route("/search").get(boutiqueSearch);
+
+export default router;

@@ -1,18 +1,9 @@
-// import express from "express"
-// import BoutiqueModel from "../models/BoutiqueMarketSchema";
-// const router = express.Router();
+import express from 'express';
+import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controller.js';
+const router = express.Router();
 
-// router.get("/",function(req,res){
-//     res.send("Hey");
-// });
+router.route("/").get(boutiquesData);
 
-// // router.post('/create', async function(req,res){
-// //     try{
-// //         const boutique = await BoutiqueModel.find()
+router.route("/search").get(boutiqueSearch);
 
-// //         let {address,name,catalog,}
-// //     }
-// // })
-
-
-// export default router;
+export default router;

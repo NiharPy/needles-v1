@@ -11,9 +11,8 @@ const boutiqueSchema = new mongoose.Schema({
   },
   catalogue: [
     {
-      itemName: String,
-      price: Number,
-      description: String,
+      itemName: [String],
+      price: [Number],
       image: String, // URL for item image
     },
   ],

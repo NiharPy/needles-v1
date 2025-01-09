@@ -1,6 +1,7 @@
 import express from 'express';
 import { CreateAdmin } from '../controllers/admin-controller.js';
 import { CreateBoutique } from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controller.js';
 const router = express.Router();
 
 router.get("/", (req, res) => {
@@ -12,6 +13,10 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 router.route('/createBoutique').post(CreateBoutique);
+
+router.route('/BoutiqueLocator').get(boutiqueSearch);
+
+router.route("/Boutiques").get(boutiquesData);
   
 
 export default router;

@@ -29,4 +29,51 @@ const CreateBoutique = async function(req,res){
       }
 };
 
+const boutiquesData = async function(req,res){
+    try{
+        const BoutiquesData = await BoutiqueModel.find();
+        res.status(200).json({
+            success : true,
+            message : 'Boutique fetched Successfully',
+            data : BoutiquesData,
+        });
+    }catch(error){
+    console.error("error");
+    res.status(500).json({
+        success : false,
+        message : "server error. Unable to fetch Boutiques",
+    });
+}
+};
+
+const boutiqueSearch = async function(req,res){
+    try{
+        const{ query, location} = req.query;
+        const searchconditions = {
+            $or:[
+                query?{name:{$regex:query,$options:'i'}} : null,
+                location?{"location.address": {$regex:location,$options:'i'}} : null,
+                query?{"catalogue.items" : {$regex:query,$options:'i'}} : null,
+            ].filter(Boolean),
+        };
+
+        console.log('Search conditions:', searchconditions);
+        
+        const Boutique_found = await BoutiqueModel.find(searchconditions);
+
+        res.status(200).send(Boutique_found);
+
+    } catch(error){
+    console.error(error);
+    res.status(500).json({
+        success: false,
+        message: 'Server error. Unable to fetch search results.',
+      });
+    }
+};
+
+export {boutiqueSearch};
+
+export {boutiquesData};
+
 export {CreateBoutique};
