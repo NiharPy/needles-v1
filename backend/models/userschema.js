@@ -2,8 +2,15 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  phone: { type: Number, required: true, unique: true },
-  otp: { type: Number, required: true },
+  phone: { 
+    type: String, // Change from Number to String
+    required: true, 
+    unique: true, 
+    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'] // Regex for Indian phone numbers
+  },
+  otp: { type: Number },
+  otpExpiry: { type: Date }, // OTP expiration timestamp
+  refreshToken: { type: String }, // Store the refresh token
   address: {
     street: String,
     city: String,
