@@ -3,7 +3,16 @@ import mongoose from "mongoose";
 const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true }, // Use bcrypt for encryption
+  password: { type: String, required: true },
+  otp: { type: Number },
+  phone: { 
+    type: String, // Change from Number to String
+    required: true, 
+    unique: true, 
+    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'] // Regex for Indian phone numbers
+  }, // Use bcrypt for encryption
+  otpExpiry: { type: Date }, // OTP expiration timestamp
+  refreshToken: { type: String },
   location: {
     address: String,
     latitude: Number,
