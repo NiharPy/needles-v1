@@ -26,6 +26,7 @@ app.get("/",(req,res)=>{
 app.use("/admin",AdminRouter);
 app.use("/Boutique",BoutiquesRouter);
 app.use("/User",UsersRouter);
+app.
 
 
 

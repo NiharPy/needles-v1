@@ -160,7 +160,32 @@ const boutiqueSearch = async function(req,res){
     }
 };
 
-export {boutiqueSearch, Boutiquelogin, verifyOtpFB};
+const viewBoutiqueDetails = async (req, res) => {
+  try {
+    const { name } = req.params;
+
+    // Fetch boutique details
+    const boutique = await BoutiqueModel.findOne({name : name});
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    if (req.user) {
+      console.log(`User ID: ${req.user._id} is viewing boutique: ${name}`);
+      // Log the user action or provide additional personalized data
+    } else {
+      console.log(`Unauthenticated user is viewing boutique: ${name}`);
+    }
+
+    res.status(200).json({ boutique });
+  } catch (error) {
+    console.error("Error in viewing boutique details:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+export {boutiqueSearch, Boutiquelogin, verifyOtpFB, viewBoutiqueDetails};
 
 export {boutiquesData};
 
