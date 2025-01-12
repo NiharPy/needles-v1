@@ -2,25 +2,22 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  phone: { 
-    type: String, // Change from Number to String
-    required: true, 
-    unique: true, 
-    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'] // Regex for Indian phone numbers
+  phone: {
+    type: String,
+    required: true,
+    unique: true,
+    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'],
   },
-  otp: { type: Number },
-  otpExpiry: { type: Date }, // OTP expiration timestamp
-  refreshToken: { type: String }, // Store the refresh token
   address: {
     street: String,
     city: String,
     state: String,
     postalCode: String,
   },
-  role:{
-    type : String,
-    enum : ['admin', 'Boutique', 'User'],
-    default : 'User'
+  role: {
+    type: String,
+    enum: ['admin', 'Boutique', 'User'],
+    default: 'User',
   },
   measurements: {
     chest: Number,
@@ -30,9 +27,13 @@ const userSchema = new mongoose.Schema({
   },
   orders: [
     {
-      boutiqueId: mongoose.Schema.Types.ObjectId,
-      items: [String], // Items ordered
-      status: { type: String, default: 'Pending' }, // e.g., Pending, In Progress, Completed
+      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }, // Reference to Order
+      itemName: { type: String }, // Linked to order itemName
+      status: {
+        type: String,
+        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'],
+        default: 'Pending', // Synced with Order status
+      },
       paymentStatus: { type: String, default: 'Unpaid' },
       createdAt: { type: Date, default: Date.now },
     },
@@ -40,5 +41,6 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-const UserModel = mongoose.model("user", userSchema)
+
+const UserModel = mongoose.model("User", userSchema);
 export default UserModel;

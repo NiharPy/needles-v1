@@ -1,18 +1,15 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
 const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  otp: { type: Number },
-  phone: { 
-    type: String, // Change from Number to String
-    required: true, 
-    unique: true, 
-    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'] // Regex for Indian phone numbers
-  }, // Use bcrypt for encryption
-  otpExpiry: { type: Date }, // OTP expiration timestamp
-  refreshToken: { type: String },
+  phone: {
+    type: String,
+    required: true,
+    unique: true,
+    match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'],
+  },
   location: {
     address: String,
     latitude: Number,
@@ -20,21 +17,25 @@ const boutiqueSchema = new mongoose.Schema({
   },
   catalogue: [
     {
-      itemName: [String],
+      itemName: [String], // List of dress types offered
       price: [Number],
-      image: String, // URL for item image
+      image: String,
     },
   ],
-  role:{
-    type : String,
-    enum : ['admin', 'Boutique', 'User'],
-    default : 'Boutique'
+  role: {
+    type: String,
+    enum: ['admin', 'Boutique', 'User'],
+    default: 'Boutique',
   },
   orders: [
     {
-      userId: mongoose.Schema.Types.ObjectId,
-      items: [String], // Items ordered
-      status: { type: String, default: 'Pending' },
+      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }, // Reference to Order
+      itemName: { type: String }, // Linked to order itemName
+      status: {
+        type: String,
+        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'],
+        default: 'Pending', // Synced with Order status
+      },
       createdAt: { type: Date, default: Date.now },
     },
   ],
@@ -44,6 +45,7 @@ const boutiqueSchema = new mongoose.Schema({
   },
   createdAt: { type: Date, default: Date.now },
 });
+
 
 const BoutiqueModel = mongoose.model("Boutique", boutiqueSchema)
 export default BoutiqueModel;
