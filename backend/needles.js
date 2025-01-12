@@ -26,13 +26,12 @@ app.get("/",(req,res)=>{
 app.use("/admin",AdminRouter);
 app.use("/Boutique",BoutiquesRouter);
 app.use("/User",UsersRouter);
-app.
 
 
 
-app.listen(port,()=>{
-    console.log("server started on http://localhost:3000")
-})
+app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+});
 
 // Log environment details
 console.log(`Running in ${process.env.NODE_ENV} mode`);
