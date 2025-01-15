@@ -105,7 +105,7 @@ const verifyOtp = async (req, res) => {
       }
   
       // Verify OTP (no need to hash, just compare)
-      if (otp !== otp.toString()) {
+      if (otp !== user.otp) {
         return res.status(400).json({ message: "Invalid OTP. Please try again." });
       }
   
