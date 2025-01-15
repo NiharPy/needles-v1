@@ -1,6 +1,29 @@
 import OrderModel from '../models/OrderSchema.js';
 import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import UserModel from '../models/userschema.js';
+import nodemailer from 'nodemailer';
+
+const transporter = nodemailer.createTransport({
+  service: 'Gmail',
+  auth: {
+    user: 'niharkumar1407@gmail.com', // Replace with your email
+    pass: 'Mamatha@1410', // Replace with your email password or app-specific password
+  },
+});
+
+const sendEmailToAdmin = async (subject, text) => {
+  try {
+    await transporter.sendMail({
+      from: 'needles.personal.2025@gmail.com',
+      to: 'needles.personal.2025@gmail.com', // Replace with admin email
+      subject,
+      text,
+    });
+    console.log('Email sent to admin successfully!');
+  } catch (error) {
+    console.error('Error sending email to admin:', error.message);
+  }
+};
 
 /**
  * @desc Place an order by an authenticated user
@@ -12,6 +35,7 @@ const placeOrder = async (req, res) => {
     const {
       userId,
       boutiqueId,
+      pickUp,
       dressType,
       measurements,
       referralImage,
@@ -53,6 +77,7 @@ const placeOrder = async (req, res) => {
     const order = await OrderModel.create({
       userId,
       boutiqueId,
+      pickUp,
       dressType,
       itemName: dressType,
       measurements,
@@ -111,7 +136,7 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Update order status
-    const order = await OrderModel.findById(orderId);
+    const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -134,6 +159,30 @@ const updateOrderStatus = async (req, res) => {
       userOrder.status = status;
       await user.save();
     }
+
+    if (order.pickUp && status === 'Accepted') {
+      const userLocation = order.userId.address;
+      const boutiqueLocation = order.boutiqueId.location;
+
+      const emailText = `
+        A ${order.userId} has requested a pick-up:
+        - User Location: ${userLocation}
+        - Boutique Location: ${boutiqueLocation}
+      `;
+      await sendEmailToAdmin('Pick-Up Request', emailText);
+    };
+
+    if (status === 'Ready for Delivery') {
+      const userLocation = order.userId.address;
+      const boutiqueLocation = order.boutiqueId.location;
+
+      const emailText = `
+        A ${order.boutiqueId} is ready to deliver an order:
+        - User Location: ${userLocation}
+        - Boutique Location: ${boutiqueLocation}
+      `;
+      await sendEmailToAdmin('Ready for Delivery', emailText);
+    };
 
     // Send response
     res.status(200).json({

@@ -92,14 +92,14 @@ const boutiquesData = async function(req,res){
 
 const verifyOtpFB = async (req, res) => {
     try {
-      const {name, phone, otp } = req.body;
+      const {phone, otp } = req.body;
   
       if (!phone || !otp) {
         return res.status(400).json({ message: "Phone number and OTP are required." });
       }
   
       // Find user by phone number (instead of userId)
-      const user = await BoutiqueModel.findOne({ name, phone });
+      const user = await BoutiqueModel.findOne({ phone });
       if (!user) {
         return res.status(404).json({ message: "Boutique Account not found." });
       }

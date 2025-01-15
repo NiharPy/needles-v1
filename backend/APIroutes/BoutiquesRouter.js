@@ -12,8 +12,8 @@ router.route("/verify-otp").post(verifyOtpFB);
 
 router.route("/search").get(boutiqueSearch);
 
-router.route('/order/:orderId/status').post(updateOrderStatus);
+router.route('/order/:orderId/status').post(authMiddleware,updateOrderStatus);
 
-router.route('/order/:orderId').get(getOrderDetails);
+router.route('/order/:orderId').get(authMiddleware,getOrderDetails);
 
 export default router;

@@ -23,9 +23,9 @@ router.route("/boutique/:name").get(publicMiddleware, viewBoutiqueDetails);
 
 router.route("/auth/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
 
-router.route('/order/place').post(placeOrder);
+router.route('/order/place').post(authMiddleware,placeOrder);
 
-router.route('/order/:orderId').get(getOrderDetails);
+router.route('/order/:orderId').get(authMiddleware,getOrderDetails);
 
 router.route("/refresh-token").post(refreshAccessToken);
 

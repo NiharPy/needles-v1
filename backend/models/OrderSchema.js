@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   boutiqueId: { type: mongoose.Schema.Types.ObjectId, ref: 'Boutique', required: true },
+  pickUp: { type: Boolean },
   dressType: {
     type: String,
     required: true,
@@ -40,7 +41,7 @@ const orderSchema = new mongoose.Schema({
   referralImage: { type: String }, // Path to referral image
   location: { type: String, required: true },
   voiceNote: {
-    type: String, // Path to the uploaded voice note
+    path: { type: String, required: true }, // Path to the uploaded voice note
     transcription: {
       telugu: String,
       hindi: String,
@@ -48,7 +49,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'],
+    enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
     default: 'Pending',
   },
   createdAt: { type: Date, default: Date.now },
