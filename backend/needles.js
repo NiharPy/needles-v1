@@ -8,7 +8,7 @@ import { config } from './config/config.js';
 
 //app config
 const app = express()
-const port = 3000
+const port = 5000
 
 // middleware
 
