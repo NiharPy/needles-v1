@@ -6,15 +6,15 @@ import nodemailer from 'nodemailer';
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
   auth: {
-    user: 'niharkumar1407@gmail.com', // Replace with your email
-    pass: 'Mamatha@1410', // Replace with your email password or app-specific password
+    user: 'nihar.neelala124@gmail.com', // Replace with your email
+    pass: 'vccu mdgc lwgz iglj', // Replace with your email password or app-specific password
   },
 });
 
 const sendEmailToAdmin = async (subject, text) => {
   try {
     await transporter.sendMail({
-      from: 'needles.personal.2025@gmail.com',
+      from: 'nihar.neelala124@gmail.com',
       to: 'needles.personal.2025@gmail.com', // Replace with admin email
       subject,
       text,
@@ -130,7 +130,7 @@ const updateOrderStatus = async (req, res) => {
     const { status } = req.body;
 
     // Validate status
-    const validStatuses = ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'];
+    const validStatuses = ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
@@ -163,11 +163,13 @@ const updateOrderStatus = async (req, res) => {
     if (order.pickUp && status === 'Accepted') {
       const userLocation = order.userId.address;
       const boutiqueLocation = order.boutiqueId.location;
+      const orderID = order._id;
 
       const emailText = `
-        A ${order.userId} has requested a pick-up:
+        A User has requested a pick-up:
         - User Location: ${userLocation}
         - Boutique Location: ${boutiqueLocation}
+        - Order Id : ${orderID}
       `;
       await sendEmailToAdmin('Pick-Up Request', emailText);
     };
@@ -175,11 +177,13 @@ const updateOrderStatus = async (req, res) => {
     if (status === 'Ready for Delivery') {
       const userLocation = order.userId.address;
       const boutiqueLocation = order.boutiqueId.location;
+      const orderID = order._id;
 
       const emailText = `
-        A ${order.boutiqueId} is ready to deliver an order:
+        A Boutique is ready to deliver an order:
         - User Location: ${userLocation}
         - Boutique Location: ${boutiqueLocation}
+        - Order Id : ${orderID}
       `;
       await sendEmailToAdmin('Ready for Delivery', emailText);
     };

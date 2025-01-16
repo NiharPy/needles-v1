@@ -4,7 +4,11 @@ const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  otp : {type : String, required : true},
+  otp: {
+    type: String,
+    required: false, // Make this field optional
+    default: '', // Optionally, set a default value
+  },
   phone: {
     type: String,
     required: true,
@@ -34,7 +38,7 @@ const boutiqueSchema = new mongoose.Schema({
       itemName: { type: String }, // Linked to order itemName
       status: {
         type: String,
-        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'],
+        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
         default: 'Pending', // Synced with Order status
       },
       createdAt: { type: Date, default: Date.now },

@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
       itemName: { type: String }, // Linked to order itemName
       status: {
         type: String,
-        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Completed'],
+        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
         default: 'Pending', // Synced with Order status
       },
       paymentStatus: { type: String, default: 'Unpaid' },

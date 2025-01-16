@@ -17,7 +17,7 @@ const CreateBoutique = async function(req,res){
             password,
             location,
             catalogue,
-            phone
+            phone,
         });
 
         return res.status(201).json(CreatedBoutique);
@@ -184,9 +184,89 @@ const viewBoutiqueDetails = async (req, res) => {
   }
 };
 
+const addItemToCatalogue = async (req, res) => {
+  try {
+    const { boutiqueId, newItems } = req.body;
+
+    // Validate input
+    if (!boutiqueId || !newItems || !Array.isArray(newItems)) {
+      return res
+        .status(400)
+        .json({ message: "Boutique ID and valid newItems array are required." });
+    }
+
+    // Find the boutique by ID
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    // Add new items to the catalogue
+    newItems.forEach((item) => {
+      if (item.itemName && item.price && item.image) {
+        boutique.catalogue.push(item);
+      }
+    });
+
+    // Save the updated boutique
+    await boutique.save();
+
+    res.status(200).json({
+      message: "Items added to the catalogue successfully.",
+      updatedCatalogue: boutique.catalogue,
+    });
+  } catch (error) {
+    console.error("Error adding items to catalogue:", error);
+    res.status(500).json({ message: "Server error. Please try again." });
+  }
+};
+
+const deleteItemFromCatalogue = async (req, res) => {
+  try {
+    const { boutiqueId, itemNames } = req.body;
+
+    // Validate input
+    if (!boutiqueId || !itemNames || !Array.isArray(itemNames)) {
+      return res
+        .status(400)
+        .json({ message: "Boutique ID and a valid array of itemNames are required." });
+    }
+
+    // Find the boutique by ID
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    // Loop through the catalogue and remove matching itemNames
+    boutique.catalogue.forEach((item) => {
+      item.itemName = item.itemName.filter(
+        (name) => !itemNames.includes(name) // Remove names that match
+      );
+    });
+
+    // Filter out catalogue entries with empty itemName arrays
+    boutique.catalogue = boutique.catalogue.filter((item) => item.itemName.length > 0);
+
+    // Save changes
+    await boutique.save();
+
+    res.status(200).json({
+      message: "Items removed from the catalogue successfully.",
+      updatedCatalogue: boutique.catalogue,
+    });
+  } catch (error) {
+    console.error("Error deleting items from catalogue:", error);
+    res.status(500).json({ message: "Server error. Please try again." });
+  }
+};
+
+export { deleteItemFromCatalogue };
 
 export {boutiqueSearch, Boutiquelogin, verifyOtpFB, viewBoutiqueDetails};
 
 export {boutiquesData};
 
 export {CreateBoutique};
+
+export {addItemToCatalogue};
