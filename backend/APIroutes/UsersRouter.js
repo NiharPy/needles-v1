@@ -1,7 +1,7 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, viewBoutiqueDetails } from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
-import { placeOrder, updateOrderStatus, getOrderDetails } from '../controllers/order-controller.js';
+import { placeOrder, getOrderDetails } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import UserModel from '../models/userschema.js';

@@ -27,6 +27,11 @@ const boutiqueSchema = new mongoose.Schema({
       image: String,
     },
   ],
+  //knownFor :{
+  //  type: String,
+  //  required: true,
+  //  enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
+  //},
   role: {
     type: String,
     enum: ['admin', 'Boutique', 'User'],
