@@ -2,6 +2,7 @@ import express from 'express';
 import { CreateAdmin } from '../controllers/admin-controller.js';
 import { CreateBoutique } from '../controllers/boutique-controller.js';
 import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controller.js';
+import { updateODDDeliveryStatus } from '../controllers/ODdelivery-controller.js';
 const router = express.Router();
 
 router.get("/", (req, res) => {
@@ -17,6 +18,8 @@ router.route('/createBoutique').post(CreateBoutique);
 router.route('/BoutiqueLocator').get(boutiqueSearch);
 
 router.route("/Boutiques").get(boutiquesData);
+
+router.route('/update-status/:orderId').post(updateODDDeliveryStatus);
   
 
 export default router;

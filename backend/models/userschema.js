@@ -10,11 +10,13 @@ const userSchema = new mongoose.Schema({
   },
   otp : {type : String, required : true},
   address: {
-    flat : String,
-    street: String,
-    city: String,
-    state: String,
-    postalCode: String,
+    flatNumber: { type: String, required: true },
+    block: { type: String, required: true },
+    street: { type: String, required: true },
+    location: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+    },
   },
   role: {
     type: String,
@@ -38,6 +40,27 @@ const userSchema = new mongoose.Schema({
       },
       paymentStatus: { type: String, default: 'Unpaid' },
       createdAt: { type: Date, default: Date.now },
+    },
+  ],
+  ODDorders: [
+    {
+      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'ODorder' }, // Reference to ODD Order
+      dressType: { type: String }, // Type of dress (Lehenga, SareeBlouse, etc.)
+      ODitems: [
+        {
+          serialCode: { type: String }, // Serial code for selected item
+          quantity: { type: Number, default: 1 }, // Quantity of the item
+        },
+      ],
+      status: {
+        type: String,
+        enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
+        default: 'Pending', // Status for ODD order
+      },
+      specialInstructions: { type: String }, // Any special instructions provided by user
+      pickupRequested: { type: Boolean, default: false },
+      paymentStatus: { type: String, default: 'Unpaid' },
+      createdAt: { type: Date, default: Date.now }, // Timestamp for order creation
     },
   ],
   createdAt: { type: Date, default: Date.now },

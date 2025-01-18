@@ -4,6 +4,7 @@ import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controll
 import { placeOrder, getOrderDetails, rateOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
+import { getDressTypes, getStep2Images, placeODOrder, getStep1Images} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 const router = express.Router();
 
@@ -32,5 +33,13 @@ router.route('/recommended/:category').get(authMiddleware, getRecommendedBoutiqu
 router.route("/rate-order").post(authMiddleware, rateOrder);
 
 router.route("/refresh-token").post(refreshAccessToken);
+
+router.route("/odd/dresstypes").get(authMiddleware,getDressTypes);
+
+router.route("/odd/select/:dressType/Body").get(authMiddleware, getStep1Images);
+
+router.route("/odd/select/:dressType/Hands").get(authMiddleware, getStep2Images);
+
+router.route("/odd/order-placed").post(authMiddleware,placeODOrder);
 
 export default router;
