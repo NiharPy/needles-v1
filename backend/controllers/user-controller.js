@@ -10,8 +10,8 @@ const registerUser = async function(req,res){
     try{
         const User = await UserModel.find();
         let {name,phone,address} = req.body;
-        if (!name ||!phone){
-            return res.status(400).send("All fields (name, phone number) are required");
+        if (!name ||!phone ||!address ){
+            return res.status(400).send("All fields (name, phone number, address) are required");
         }
         const existingUser = await UserModel.findOne({ phone });
         if (existingUser) {

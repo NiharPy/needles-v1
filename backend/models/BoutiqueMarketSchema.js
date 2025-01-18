@@ -27,11 +27,11 @@ const boutiqueSchema = new mongoose.Schema({
       image: String,
     },
   ],
-  //knownFor :{
-  //  type: String,
-  //  required: true,
-  //  enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
-  //},
+  knownFor :{
+    type: String,
+    required: true,
+    enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
+  },
   role: {
     type: String,
     enum: ['admin', 'Boutique', 'User'],
@@ -49,6 +49,15 @@ const boutiqueSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
+  ratings: [
+    {
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
+      rating: { type: Number, required: false, min: 1, max: 5 },
+      comment: { type: String },
+    },
+  ],
+  averageRating: { type: Number, default: 0 },
+  totalRatings: { type: Number, default: 0 },
   businessTracker: {
     totalOrders: { type: Number, default: 0 },
     totalRevenue: { type: Number, default: 0 },

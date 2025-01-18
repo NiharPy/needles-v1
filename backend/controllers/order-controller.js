@@ -42,6 +42,13 @@ const placeOrder = async (req, res) => {
       location,
       voiceNote,
     } = req.body;
+    
+
+    const User = await UserModel.findById(userId);
+    if (!User) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
 
     // Validate boutique and dress type
     const boutique = await BoutiqueModel.findById(boutiqueId);
@@ -75,14 +82,14 @@ const placeOrder = async (req, res) => {
 
     // Create new order
     const order = await OrderModel.create({
-      userId,
-      boutiqueId,
+      userId : User._id,
+      boutiqueId : boutique._id,
       pickUp,
       dressType,
       itemName: dressType,
       measurements,
       referralImage,
-      location,
+      location : User.address,
       voiceNote,
       status: 'Pending',
     });
@@ -221,6 +228,70 @@ const getOrderDetails = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+// Controller function for users to rate a boutique after an order
+const rateOrder = async (req, res) => {
+  try {
+    const { boutiqueId, rating, comment } = req.body;
+    const userId = req.user.id; // Assuming user ID is available from the authenticated request
+
+    // Validate the rating
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5." });
+    }
+
+    // Find the boutique by ID
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    // Check if the boutique's ratings array is valid
+    if (!Array.isArray(boutique.ratings)) {
+      return res.status(500).json({ message: "Boutique ratings are not properly initialized." });
+    }
+
+    // Check if the user has already rated this boutique
+    const existingRatingIndex = boutique.ratings.findIndex(
+      (ratingItem) => ratingItem.userId && ratingItem.userId.toString() === userId.toString()
+    );
+
+    if (existingRatingIndex !== -1) {
+      // If the user has already rated, update the existing rating
+      boutique.ratings[existingRatingIndex].rating = rating;
+      boutique.ratings[existingRatingIndex].comment = comment;
+    } else {
+      // If it's a new rating, add it to the boutique's ratings array
+      boutique.ratings.push({ userId, rating, comment });
+    }
+
+    // Debugging: Log ratings array and calculated average
+    console.log("Ratings array:", boutique.ratings);
+    
+    // Recalculate the average rating
+    const totalRatings = boutique.ratings.length;
+    const sumOfRatings = boutique.ratings.reduce((sum, ratingItem) => sum + ratingItem.rating, 0);
+    const newAverageRating = sumOfRatings / totalRatings;
+    boutique.averageRating = newAverageRating;
+
+    // Debugging: Log new average rating
+    console.log("New average rating:", newAverageRating);
+
+    // Save the updated boutique
+    await boutique.save();
+
+    // Refetch the updated boutique to ensure we have the latest averageRating
+    const updatedBoutique = await BoutiqueModel.findById(boutiqueId);
+
+    res.status(200).json({ message: "Rating submitted successfully.", boutique: updatedBoutique });
+  } catch (error) {
+    console.error("Error while rating boutique:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+
+export { rateOrder };
 
 export {getOrderDetails};
 export {placeOrder};

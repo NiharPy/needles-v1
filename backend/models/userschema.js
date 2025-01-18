@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   },
   otp : {type : String, required : true},
   address: {
+    flat : String,
     street: String,
     city: String,
     state: String,

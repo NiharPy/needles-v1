@@ -1,4 +1,5 @@
 import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
+import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 const OTP_EXPIRATION_TIME = 5
@@ -6,8 +7,8 @@ const BOUTIQUE_REFRESH_TOKEN_EXPIRATION = 3
 const CreateBoutique = async function(req,res){
     try{
         const boutique = await BoutiqueModel.find();
-        let {name,email,password,location,catalogue,phone} = req.body;
-        if (!name || !password || !email || !location || !catalogue || !phone){
+        let {name,email,password,location,catalogue,phone,knownFor} = req.body;
+        if (!name || !password || !email || !location || !catalogue || !phone || !knownFor){
             return res.status(400).send("All fields (name, password, email, location, catalogue, phone) are required");
         }
 
@@ -18,6 +19,7 @@ const CreateBoutique = async function(req,res){
             location,
             catalogue,
             phone,
+            knownFor,
         });
 
         return res.status(201).json(CreatedBoutique);
@@ -41,7 +43,7 @@ const Boutiquelogin = async function(req,res) {
 
         // Validate phone number input
         if (!name || !password || !phone) {
-            return res.status(400).json({ message: "name, password, email is required." });
+            return res.status(400).json({ message: "name, password, phone is required." });
         }
 
         // Check if the user exists
@@ -145,7 +147,7 @@ const boutiqueSearch = async function(req,res){
             ].filter(Boolean),
         };
 
-        const fieldsToSelect = 'name location.address catalogue.itemName catalogue.price'
+        const fieldsToSelect = 'name location.address catalogue.itemName catalogue.price averageRating totalRatings'
 
         const Boutique_found = await BoutiqueModel.find(searchconditions, fieldsToSelect);
 
@@ -260,6 +262,76 @@ const deleteItemFromCatalogue = async (req, res) => {
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
+
+
+const getRecommendedBoutiques = async (req, res) => {
+  try {
+    // Fetch all boutiques with the required fields, sorting by 'averageRating' in descending order
+    const boutiques = await BoutiqueModel.find({})
+      .select('name location knownFor averageRating ratings') // Select only the fields you need
+      .sort({ averageRating: -1 }) // Sort by 'averageRating' in descending order
+      .lean();  // Using lean() to return plain JavaScript objects
+
+    if (!boutiques || boutiques.length === 0) {
+      return res.status(404).json({ message: 'No boutiques found' });
+    }
+
+    // Add total rating (length of the ratings array) for each boutique
+    boutiques.forEach(boutique => {
+      boutique.totalRating = boutique.ratings.length;
+      delete boutique.ratings; // Remove ratings field to avoid sending unnecessary data
+    });
+
+    // Send the sorted boutiques to the frontend
+    return res.status(200).json({ recommendedBoutiques: boutiques });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'An error occurred while fetching boutiques' });
+  }
+};
+
+
+
+
+const getRecommendedBoutiquesByCategory = async (req, res) => {
+  try {
+    const { category } = req.params; // Get category from URL params
+    if (!category || !['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'].includes(category)) {
+      return res.status(400).json({ message: "Invalid category." });
+    }
+
+    // Find boutiques that are known for the given category and select only the required fields
+    const boutiques = await BoutiqueModel.find({ knownFor: category })
+      .select('name location knownFor averageRating ratings') // Select only the fields you need
+      .lean(); // Using lean() for better performance
+
+    if (boutiques.length === 0) {
+      return res.status(404).json({ message: "No boutiques found for this category." });
+    }
+
+    // Add total rating (length of the ratings array) for each boutique
+    boutiques.forEach(boutique => {
+      boutique.totalRating = boutique.ratings.length;
+      delete boutique.ratings; // Remove ratings field to avoid sending unnecessary data
+    });
+
+    // Sort boutiques by average rating in descending order (highest to lowest)
+    boutiques.sort((a, b) => b.averageRating - a.averageRating);
+
+    res.status(200).json({
+      message: "Recommended boutiques sorted by rating.",
+      boutiques,
+    });
+  } catch (error) {
+    console.error("Error while fetching recommended boutiques:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+
+export {getRecommendedBoutiquesByCategory};
+
+export { getRecommendedBoutiques };
 
 export { deleteItemFromCatalogue };
 
