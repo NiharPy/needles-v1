@@ -4,7 +4,6 @@ import { sendOTP } from "../utils/otpService.js";
 
 const OTP_EXPIRATION_TIME = 5
 
-const REFRESH_TOKEN_EXPIRATION = 3
 
 const registerUser = async function(req,res){
     try{
@@ -110,8 +109,8 @@ const verifyOtp = async (req, res) => {
       }
   
       // Generate tokens after successful OTP verification
-      const accessToken = jwt.sign({ userId: user._id, name: user.name }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-      const refreshToken = jwt.sign({ userId: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: `${REFRESH_TOKEN_EXPIRATION}m` });
+      const accessToken = jwt.sign({ userId: user._id, name: user.name }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "30d" });
+      const refreshToken = jwt.sign({ userId: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "30d" });
   
       // Save refresh token
       user.refreshToken = refreshToken;

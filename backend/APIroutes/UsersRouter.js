@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByCategory} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -20,7 +20,9 @@ router.route("/verify-otp").post(verifyOtp);
 
 router.route("/search").get(authMiddleware,boutiqueSearch);
 
-router.route("/auth/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
+router.route("/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
+
+router.route("/boutiques/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
 
 router.route('/order/place').post(authMiddleware,placeOrder);
 
@@ -28,7 +30,7 @@ router.route('/order/:orderId').get(authMiddleware,getOrderDetails);
 
 router.route('/recommended').get(authMiddleware,getRecommendedBoutiques);
 
-router.route('/recommended/:category').get(authMiddleware, getRecommendedBoutiquesByCategory);
+router.route('/recommended/:dressType').get(authMiddleware, getRecommendedBoutiquesByDressType);
 
 router.route("/rate-order").post(authMiddleware, rateOrder);
 

@@ -4,11 +4,7 @@ const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  otp: {
-    type: String,
-    required: false, // Make this field optional
-    default: '', // Optionally, set a default value
-  },
+  otp: { type: String, default: '' },
   phone: {
     type: String,
     required: true,
@@ -22,16 +18,20 @@ const boutiqueSchema = new mongoose.Schema({
   },
   catalogue: [
     {
-      itemName: [String], // List of dress types offered
+      itemName: [String],
       price: [Number],
-      image: String,
     },
   ],
-  knownFor :{
-    type: String,
-    required: true,
-    enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
-  },
+  dressTypes: [
+    {
+      type: {
+        type: String,
+        required: true,
+        enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'],
+      },
+      images: [String], // Array of image URLs for each dress type
+    },
+  ],
   role: {
     type: String,
     enum: ['admin', 'Boutique', 'User'],
@@ -39,20 +39,19 @@ const boutiqueSchema = new mongoose.Schema({
   },
   orders: [
     {
-      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }, // Reference to Order
-      itemName: { type: String }, // Linked to order itemName
+      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
       status: {
         type: String,
         enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
-        default: 'Pending', // Synced with Order status
+        default: 'Pending',
       },
       createdAt: { type: Date, default: Date.now },
     },
   ],
   ratings: [
     {
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
-      rating: { type: Number, required: false, min: 1, max: 5 },
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      rating: { type: Number, min: 1, max: 5 },
       comment: { type: String },
     },
   ],

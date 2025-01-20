@@ -38,30 +38,31 @@ const placeOrder = async (req, res) => {
       pickUp,
       dressType,
       measurements,
-      referralImage,
       location,
       voiceNote,
     } = req.body;
-    
 
+    // Find the user
     const User = await UserModel.findById(userId);
     if (!User) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-
-    // Validate boutique and dress type
+    // Find the boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    const availableItems = boutique.catalogue.flatMap((item) => item.itemName);
-    if (!availableItems.includes(dressType)) {
+    // Validate dressType exists in boutique's dressTypes
+    const dressTypeData = boutique.dressTypes.find(
+      (type) => type.typeName === dressType
+    );
+    if (!dressTypeData) {
       return res.status(400).json({ message: `Invalid dress type: ${dressType}` });
     }
 
-    // Validate measurements based on dress type
+    // Validate measurements
     const measurementRequirements = {
       'Saree Blouse': ['chest', 'shoulder', 'waist', 'armLength'],
       Lehenga: ['waist', 'hip', 'length'],
@@ -72,7 +73,9 @@ const placeOrder = async (req, res) => {
 
     const requiredMeasurements = measurementRequirements[dressType] || [];
     const providedKeys = Object.keys(measurements);
-    const isValidMeasurements = requiredMeasurements.every((key) => providedKeys.includes(key));
+    const isValidMeasurements = requiredMeasurements.every((key) =>
+      providedKeys.includes(key)
+    );
 
     if (!isValidMeasurements) {
       return res.status(400).json({
@@ -80,16 +83,18 @@ const placeOrder = async (req, res) => {
       });
     }
 
+    // Use the first image from the dressType as the referralImage
+    const referralImage = dressTypeData.images[0];
+
     // Create new order
     const order = await OrderModel.create({
-      userId : User._id,
-      boutiqueId : boutique._id,
+      userId: User._id,
+      boutiqueId: boutique._id,
       pickUp,
       dressType,
-      itemName: dressType,
       measurements,
       referralImage,
-      location : User.address,
+      location: User.address,
       voiceNote,
       status: 'Pending',
     });
@@ -97,23 +102,16 @@ const placeOrder = async (req, res) => {
     // Add order to Boutique's orders
     boutique.orders.push({
       orderId: order._id,
-      itemName: dressType,
       status: 'Pending',
     });
     await boutique.save();
 
     // Add order to User's orders
-    const user = await UserModel.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    user.orders.push({
+    User.orders.push({
       orderId: order._id,
-      itemName: dressType,
       status: 'Pending',
     });
-    await user.save();
+    await User.save();
 
     // Send response
     res.status(201).json({
@@ -125,6 +123,7 @@ const placeOrder = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 /**
  * @desc Update order status by the boutique
@@ -142,12 +141,13 @@ const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
 
-    // Update order status
+    // Find the order
     const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    // Update order status
     order.status = status;
     await order.save();
 
@@ -167,6 +167,7 @@ const updateOrderStatus = async (req, res) => {
       await user.save();
     }
 
+    // Handle notifications for specific statuses
     if (order.pickUp && status === 'Accepted') {
       const userLocation = order.userId.address;
       const boutiqueLocation = order.boutiqueId.location;
@@ -179,7 +180,7 @@ const updateOrderStatus = async (req, res) => {
         - Order Id : ${orderID}
       `;
       await sendEmailToAdmin('Pick-Up Request', emailText);
-    };
+    }
 
     if (status === 'Ready for Delivery') {
       const userLocation = order.userId.address;
@@ -193,7 +194,7 @@ const updateOrderStatus = async (req, res) => {
         - Order Id : ${orderID}
       `;
       await sendEmailToAdmin('Ready for Delivery', emailText);
-    };
+    }
 
     // Send response
     res.status(200).json({
