@@ -56,13 +56,13 @@ const placeOrder = async (req, res) => {
 
     // Validate dressType exists in boutique's dressTypes
     const dressTypeData = boutique.dressTypes.find(
-      (type) => type.typeName === dressType
+      (type) => type.type === dressType
     );
     if (!dressTypeData) {
-      return res.status(400).json({ message: `Invalid dress type: ${dressType}` });
+      return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
-    // Validate measurements
+    // Validate measurements based on the selected dressType
     const measurementRequirements = {
       'Saree Blouse': ['chest', 'shoulder', 'waist', 'armLength'],
       Lehenga: ['waist', 'hip', 'length'],
@@ -123,6 +123,7 @@ const placeOrder = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 /**

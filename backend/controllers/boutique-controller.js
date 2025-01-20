@@ -344,6 +344,7 @@ const addDressType = async (req, res) => {
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
 
+    // Add the new dress type to the boutique
     boutique.dressTypes.push({ type: dressType, images });
     await boutique.save();
 
@@ -354,7 +355,6 @@ const addDressType = async (req, res) => {
   }
 };
 
-
 const deleteDressType = async (req, res) => {
   const { boutiqueId, dressType } = req.body;
 
@@ -362,6 +362,7 @@ const deleteDressType = async (req, res) => {
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
 
+    // Filter the dressTypes array to remove the specified dress type
     boutique.dressTypes = boutique.dressTypes.filter((type) => type.type !== dressType);
     await boutique.save();
 
@@ -371,6 +372,7 @@ const deleteDressType = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 
 const getDressTypeImages = async (req, res) => {

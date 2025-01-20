@@ -9,16 +9,19 @@ const orderSchema = new mongoose.Schema({
     required: true,
     enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
   },
-  itemName: {
+  dressType: {
     type: String,
     required: true,
     validate: {
       validator: async function (value) {
         const boutique = await mongoose.model('Boutique').findById(this.boutiqueId);
-        const allItems = boutique?.catalogue.flatMap((item) => item.itemName);
-        return allItems.includes(value);
+        if (!boutique) {
+          return false; // Boutique doesn't exist
+        }
+        // Check if the dressType exists in the boutique's dressTypes
+        return boutique.dressTypes.some((type) => type.type === value);
       },
-      message: 'Invalid itemName. It does not exist in the boutique’s catalogue.',
+      message: 'Invalid dress type. It does not exist in the boutique’s available dress types.',
     },
   },
   measurements: {

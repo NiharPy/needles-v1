@@ -22,7 +22,7 @@ router.route("/search").get(authMiddleware,boutiqueSearch);
 
 router.route("/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
 
-router.route("/boutiques/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
+router.route("/boutique/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
 
 router.route('/order/place').post(authMiddleware,placeOrder);
 

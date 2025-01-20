@@ -27,7 +27,6 @@ const boutiqueSchema = new mongoose.Schema({
       type: {
         type: String,
         required: true,
-        enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'],
       },
       images: [String], // Array of image URLs for each dress type
     },
