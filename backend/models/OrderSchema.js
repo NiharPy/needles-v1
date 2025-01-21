@@ -6,8 +6,7 @@ const orderSchema = new mongoose.Schema({
   pickUp: { type: Boolean },
   dressType: {
     type: String,
-    required: true,
-    enum: ['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'], // Predefined dress types
+    required: true, // Predefined dress types
   },
   dressType: {
     type: String,
