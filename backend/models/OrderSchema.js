@@ -28,16 +28,25 @@ const orderSchema = new mongoose.Schema({
     of: Number,
     required: true,
     validate: {
-      validator: function (measurements) {
+      validator: async function (measurements) {
+        const boutique = await mongoose.model('Boutique').findById(this.boutiqueId);
+        if (!boutique) {
+          return false; // Boutique doesn't exist
+        }
+
         const dressType = this.dressType;
-        const requiredMeasurements = measurementRequirements[dressType] || [];
+        // Find the boutique's specific measurement requirements for the given dress type
+        const dressTypeConfig = boutique.dressTypes.find((type) => type.type === dressType);
+        if (!dressTypeConfig || !dressTypeConfig.measurementRequirements) {
+          return false; // Measurement requirements not found for this dress type
+        }
+
+        const requiredMeasurements = dressTypeConfig.measurementRequirements;
         const providedKeys = Array.from(measurements.keys());
         return requiredMeasurements.every((key) => providedKeys.includes(key));
       },
       message: (props) =>
-        `Invalid measurements for dress type "${props.value.dressType}". Required fields: ${measurementRequirements[props.value.dressType].join(
-          ', '
-        )}`,
+        `Invalid measurements for dress type "${props.value.dressType}". Please provide all required fields.`,
     },
   },
   referralImage: { type: String }, // Path to referral image
@@ -49,6 +58,7 @@ const orderSchema = new mongoose.Schema({
       hindi: String,
     },
   },
+  alterations: { type: Boolean, default: false },
   status: {
     type: String,
     enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],
@@ -58,13 +68,6 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Measurement requirements for dress types
-const measurementRequirements = {
-  'Saree Blouse': ['chest', 'shoulder', 'waist', 'armLength'],
-  Lehenga: ['waist', 'hip', 'length'],
-  Kurta: ['chest', 'waist', 'hip', 'shoulder', 'armLength'],
-  Shirt: ['chest', 'waist', 'shoulder', 'armLength', 'length'],
-  Gown: ['chest', 'waist', 'hip', 'shoulder', 'length', 'armLength'],
-};
 
 
 const OrderModel = mongoose.model("order", orderSchema);

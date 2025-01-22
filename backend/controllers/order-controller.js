@@ -2,6 +2,9 @@ import OrderModel from '../models/OrderSchema.js';
 import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import UserModel from '../models/userschema.js';
 import nodemailer from 'nodemailer';
+import AltorderModel from '../models/AlterOrderSchema.js';
+import ChatModel from '../models/Chat.js';
+import mongoose from 'mongoose';
 
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
@@ -37,6 +40,7 @@ const placeOrder = async (req, res) => {
       boutiqueId,
       pickUp,
       dressType,
+      referralImage,
       measurements,
       location,
       voiceNote,
@@ -62,16 +66,8 @@ const placeOrder = async (req, res) => {
       return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
-    // Validate measurements based on the selected dressType
-    const measurementRequirements = {
-      'Saree Blouse': ['chest', 'shoulder', 'waist', 'armLength'],
-      Lehenga: ['waist', 'hip', 'length'],
-      Kurta: ['chest', 'waist', 'hip', 'shoulder', 'armLength'],
-      Shirt: ['chest', 'waist', 'shoulder', 'armLength', 'length'],
-      Gown: ['chest', 'waist', 'hip', 'shoulder', 'length', 'armLength'],
-    };
-
-    const requiredMeasurements = measurementRequirements[dressType] || [];
+    // Validate measurements based on the boutique-specific requirements
+    const requiredMeasurements = dressTypeData.measurementRequirements || [];
     const providedKeys = Object.keys(measurements);
     const isValidMeasurements = requiredMeasurements.every((key) =>
       providedKeys.includes(key)
@@ -83,9 +79,6 @@ const placeOrder = async (req, res) => {
       });
     }
 
-    // Use the first image from the dressType as the referralImage
-    const referralImage = dressTypeData.images[0];
-
     // Create new order
     const order = await OrderModel.create({
       userId: User._id,
@@ -94,7 +87,7 @@ const placeOrder = async (req, res) => {
       dressType,
       measurements,
       referralImage,
-      location: User.address,
+      location : User.address,
       voiceNote,
       status: 'Pending',
     });
@@ -123,6 +116,7 @@ const placeOrder = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
@@ -291,6 +285,261 @@ const rateOrder = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
+
+const requestAlteration = async (req, res) => {
+  try {
+    const { userId, orderId } = req.body;
+
+    // Find the original order
+    const originalOrder = await OrderModel.findById(orderId);
+    if (!originalOrder) return res.status(404).json({ message: 'Order not found' });
+
+    // Check if the user is the owner of the order
+    if (originalOrder.userId.toString() !== userId) {
+      return res.status(403).json({ message: 'Unauthorized request' });
+    }
+
+    // Find the boutique handling the order
+    const boutique = await BoutiqueModel.findById(originalOrder.boutiqueId);
+    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
+
+    // Update alteration status in the original order
+    originalOrder.alterations = true;
+    await originalOrder.save();
+
+    // Create a new Altorder
+    const altOrder = new AltorderModel({
+      originalOrderId: orderId,
+      orderId: new mongoose.Types.ObjectId(), // Use 'new' keyword to create a new ObjectId
+      userId,
+      boutiqueId: originalOrder.boutiqueId,
+      deliveryStatus: 'Pending',
+      alterations: true,
+    });
+
+    await altOrder.save();
+
+    // Update User schema
+    const user = await UserModel.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.orders.push({
+      orderId: altOrder.orderId,
+      dressType: originalOrder.dressType,
+      alterations: true,
+      status: 'Pending',
+    });
+    await user.save();
+
+    // Update Boutique schema
+    boutique.orders.push({
+      orderId: altOrder.orderId,
+      alterations: true,
+    });
+    await boutique.save();
+
+    const mailOptions = {
+      from: 'nihar.neelala124@gmail.com',
+      to: 'needles.personal.2025@gmail.com',
+      subject: 'New Alteration Request',
+      text: `An alteration request has been made for Order ID: ${orderId}.
+New Alteration Order ID: ${altOrder.orderId}
+User Location: ${user.address.flatNumber}, ${user.address.block}, ${user.address.street}
+Boutique Location: ${boutique.location.address}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: 'Alteration request placed successfully', altOrder });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+
+const getUserAlterationOrders = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const user = await UserModel.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Find all alteration orders for the user and populate the originalOrderId field
+    const alterationOrders = await AltorderModel.find({ userId })
+      .populate('originalOrderId') // This is to populate the order details
+      .exec();
+
+    if (alterationOrders.length === 0) {
+      return res.status(404).json({ message: 'No alteration orders found for this user' });
+    }
+
+    res.status(200).json({
+      message: 'Alteration orders retrieved successfully',
+      alterationOrders,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+const startChatSessionUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Find the user
+    const user = await UserModel.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Initialize a new chat session
+    const chatSession = new ChatModel({
+      userId,
+      boutiqueId: null, // This will be set when a boutique joins the chat
+      sender: 'User',
+      message: 'Hello, I need some alterations.',
+      sessionActive: true,
+    });
+
+    await chatSession.save();
+    res.status(200).json({ message: 'Chat session started', chatSession });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error starting chat session', error: error.message });
+  }
+};
+
+// Start a new chat session for the boutique
+const startChatSessionBoutique = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
+
+    // Find the boutique
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
+
+    // Find the user's chat session
+    const chatSession = await ChatModel.findOne({ boutiqueId: null, sessionActive: true });
+    if (!chatSession) return res.status(404).json({ message: 'No active chat session for this user' });
+
+    // Set the boutique's ID to the session
+    chatSession.boutiqueId = boutiqueId;
+    chatSession.message = 'Hello, how can I assist you with your alterations?';
+    await chatSession.save();
+
+    res.status(200).json({ message: 'Chat session started with boutique', chatSession });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error starting chat session', error: error.message });
+  }
+};
+
+// Send a message from the user to the boutique
+const sendMessageUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { message, image, voiceNote } = req.body;
+
+    // Find the active chat session for the user
+    const chatSession = await ChatModel.findOne({ userId, sessionActive: true });
+    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
+
+    // Add the message from the user
+    const newMessage = new ChatModel({
+      userId,
+      boutiqueId: chatSession.boutiqueId,
+      sender: 'User',
+      message,
+      image,
+      voiceNote,
+      sessionActive: true,
+    });
+
+    await newMessage.save();
+    res.status(200).json({ message: 'Message sent to boutique', newMessage });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error sending message', error: error.message });
+  }
+};
+
+// Send a message from the boutique to the user
+const sendMessageBoutique = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
+    const { message, image, voiceNote } = req.body;
+
+    // Find the active chat session for the boutique
+    const chatSession = await ChatModel.findOne({ boutiqueId, sessionActive: true });
+    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
+
+    // Add the message from the boutique
+    const newMessage = new ChatModel({
+      boutiqueId,
+      userId: chatSession.userId,
+      sender: 'Boutique',
+      message,
+      image,
+      voiceNote,
+      sessionActive: true,
+    });
+
+    await newMessage.save();
+    res.status(200).json({ message: 'Message sent to user', newMessage });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error sending message', error: error.message });
+  }
+};
+
+// Close the chat session when boutique says "Bye"
+const closeChatSession = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Find the active chat session for the user
+    const chatSession = await ChatModel.findOne({ userId, sessionActive: true });
+    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
+
+    // Close the chat session
+    chatSession.sessionActive = false;
+    await chatSession.save();
+
+    res.status(200).json({ message: 'Chat session closed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error closing chat session', error: error.message });
+  }
+};
+
+// Get the chat session history for a user or boutique
+const getChatSessionHistory = async (req, res) => {
+  try {
+    const { userId, boutiqueId } = req.params;
+
+    const chatHistory = await ChatModel.find({
+      $or: [{ userId }, { boutiqueId }],
+      sessionActive: false, // Only retrieve closed sessions
+    });
+
+    res.status(200).json({ message: 'Chat history fetched', chatHistory });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching chat history', error: error.message });
+  }
+};
+
+
+export {startChatSessionUser, startChatSessionBoutique, sendMessageUser, sendMessageBoutique, closeChatSession, getChatSessionHistory};
+
+
+export {getUserAlterationOrders};
+
+
+export {requestAlteration};
 
 
 export { rateOrder };

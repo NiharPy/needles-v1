@@ -33,6 +33,7 @@ const userSchema = new mongoose.Schema({
     {
       orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' }, // Reference to Order
       dressType : {type : String}, // Linked to order itemName
+      alterations: { type: Boolean, default: false },
       status: {
         type: String,
         enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],

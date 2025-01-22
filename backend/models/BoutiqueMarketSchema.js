@@ -29,6 +29,7 @@ const boutiqueSchema = new mongoose.Schema({
         required: true,
       },
       images: [String], // Array of image URLs for each dress type
+      measurementRequirements: [String],
     },
   ],
   role: {
@@ -39,6 +40,7 @@ const boutiqueSchema = new mongoose.Schema({
   orders: [
     {
       orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
+      alterations: { type: Boolean, default: false },
       status: {
         type: String,
         enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'],

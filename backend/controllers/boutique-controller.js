@@ -338,14 +338,19 @@ const getRecommendedBoutiquesByDressType = async (req, res) => {
 
 
 const addDressType = async (req, res) => {
-  const { boutiqueId, dressType, images } = req.body;
+  const { boutiqueId, dressType, images, measurementRequirements } = req.body;
 
   try {
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
 
-    // Add the new dress type to the boutique
-    boutique.dressTypes.push({ type: dressType, images });
+    // Add the new dress type with measurement requirements to the boutique
+    boutique.dressTypes.push({
+      type: dressType,
+      images,
+      measurementRequirements, // Add the new field
+    });
+
     await boutique.save();
 
     res.status(200).json({ message: 'Dress type added successfully', boutique });
@@ -354,6 +359,7 @@ const addDressType = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 const deleteDressType = async (req, res) => {
   const { boutiqueId, dressType } = req.body;
