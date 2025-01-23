@@ -40,11 +40,33 @@ const placeOrder = async (req, res) => {
       boutiqueId,
       pickUp,
       dressType,
-      referralImage,
-      measurements,
+      measurements: rawMeasurements,
       location,
       voiceNote,
     } = req.body;
+
+    console.log("req body : ", req.body);
+
+    let measurements;
+    if (typeof rawMeasurements === "string") {
+      // Remove any leading/trailing whitespace or tabs
+      const sanitizedMeasurements = rawMeasurements.trim();
+
+      try {
+        measurements = JSON.parse(sanitizedMeasurements); // Parse the sanitized string
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid format for measurements. Please provide a valid JSON object.",
+        });
+      }
+    } else {
+      measurements = rawMeasurements; // Use as-is if it's already an object
+    }
+
+    // Ensure referralImage file is uploaded
+    if (!req.file || !req.file.path) {
+      return res.status(400).json({ message: 'Referral image is required' });
+    }
 
     // Find the user
     const User = await UserModel.findById(userId);
@@ -63,7 +85,9 @@ const placeOrder = async (req, res) => {
       (type) => type.type === dressType
     );
     if (!dressTypeData) {
-      return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
+      return res
+        .status(400)
+        .json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
     // Validate measurements based on the boutique-specific requirements
@@ -75,9 +99,14 @@ const placeOrder = async (req, res) => {
 
     if (!isValidMeasurements) {
       return res.status(400).json({
-        message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(', ')}`,
+        message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(
+          ', '
+        )}`,
       });
     }
+
+    // Upload referral image to Cloudinary
+    const referralImage = req.file.path; // Cloudinary stores the URL in `req.file.path`
 
     // Create new order
     const order = await OrderModel.create({
@@ -86,8 +115,8 @@ const placeOrder = async (req, res) => {
       pickUp,
       dressType,
       measurements,
-      referralImage,
-      location : User.address,
+      referralImage, // Use the Cloudinary URL
+      location: User.address, // Assuming location comes from user's address
       voiceNote,
       status: 'Pending',
     });
@@ -112,10 +141,11 @@ const placeOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Error placing order:', error);  // Improved error logging
+    res.status(500).json({ message: 'Server error', error: error.message || error });
   }
 };
+
 
 
 

@@ -6,6 +6,7 @@ import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getStep2Images, placeODOrder, getStep1Images} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
+import { upload } from '../utils/cloudinary.js';
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -24,7 +25,7 @@ router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails)
 
 router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
 
-router.route('/:userId/order/place').post(authMiddleware,placeOrder);
+router.route('/:userId/order/place').post(authMiddleware,upload.single('referralImage'),placeOrder);
 
 router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
 

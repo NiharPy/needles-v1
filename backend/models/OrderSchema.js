@@ -52,11 +52,7 @@ const orderSchema = new mongoose.Schema({
   referralImage: { type: String }, // Path to referral image
   location: { type: String, required: true },
   voiceNote: {
-    path: { type: String, required: true }, // Path to the uploaded voice note
-    transcription: {
-      telugu: String,
-      hindi: String,
-    },
+    path: { type: String }, // Path to the uploaded voice note
   },
   alterations: { type: Boolean, default: false },
   status: {
