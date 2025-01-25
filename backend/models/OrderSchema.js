@@ -51,7 +51,7 @@ const orderSchema = new mongoose.Schema({
   },
   referralImage: { type: String }, // Path to referral image
   location: { type: String, required: true },
-  voiceNote: {type: String },
+  voiceNote: [{type: String }],
   alterations: { type: Boolean, default: false },
   status: {
     type: String,

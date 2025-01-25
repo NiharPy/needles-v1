@@ -67,9 +67,12 @@ const placeOrder = async (req, res) => {
     }
 
     // Ensure voiceNotes file is uploaded
-    let voiceNoteUrl = null;
+    let voiceNoteUrl = [];
     if (req.files && req.files.voiceNotes && req.files.voiceNotes.length > 0) {
-      voiceNoteUrl = req.files.voiceNotes[0].path; // Get the Cloudinary URL for the audio file
+      const maxFiles = 5;
+      req.files.voiceNotes.slice(0, maxFiles).forEach((file) => {
+        voiceNoteUrl.push(file.path); // Add each audio file's URL up to 5
+        });
     }
 
     // Find the user
