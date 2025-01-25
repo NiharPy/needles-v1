@@ -25,7 +25,11 @@ router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails)
 
 router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
 
-router.route('/:userId/order/place').post(authMiddleware,upload.single('referralImage'),placeOrder);
+router.route('/:userId/order/place').post(authMiddleware, upload.fields([
+  { name: 'referralImage', maxCount: 1 },
+  { name: 'voiceNotes', maxCount: 1 }
+]), placeOrder);
+
 
 router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
 

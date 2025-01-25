@@ -42,14 +42,12 @@ const placeOrder = async (req, res) => {
       dressType,
       measurements: rawMeasurements,
       location,
-      voiceNote,
     } = req.body;
 
     console.log("req body : ", req.body);
 
     let measurements;
     if (typeof rawMeasurements === "string") {
-      // Remove any leading/trailing whitespace or tabs
       const sanitizedMeasurements = rawMeasurements.trim();
 
       try {
@@ -64,8 +62,14 @@ const placeOrder = async (req, res) => {
     }
 
     // Ensure referralImage file is uploaded
-    if (!req.file || !req.file.path) {
+    if (!req.files || !req.files.referralImage) {
       return res.status(400).json({ message: 'Referral image is required' });
+    }
+
+    // Ensure voiceNotes file is uploaded
+    let voiceNoteUrl = null;
+    if (req.files && req.files.voiceNotes && req.files.voiceNotes.length > 0) {
+      voiceNoteUrl = req.files.voiceNotes[0].path; // Get the Cloudinary URL for the audio file
     }
 
     // Find the user
@@ -106,7 +110,7 @@ const placeOrder = async (req, res) => {
     }
 
     // Upload referral image to Cloudinary
-    const referralImage = req.file.path; // Cloudinary stores the URL in `req.file.path`
+    const referralImage = req.files.referralImage[0].path; // Access Cloudinary URL from referralImage
 
     // Create new order
     const order = await OrderModel.create({
@@ -115,9 +119,9 @@ const placeOrder = async (req, res) => {
       pickUp,
       dressType,
       measurements,
-      referralImage, // Use the Cloudinary URL
+      referralImage, // Use the Cloudinary URL for the image
       location: User.address, // Assuming location comes from user's address
-      voiceNote,
+      voiceNote: voiceNoteUrl, // Use the Cloudinary URL for the voice note
       status: 'Pending',
     });
 
@@ -138,13 +142,17 @@ const placeOrder = async (req, res) => {
     // Send response
     res.status(201).json({
       message: 'Order placed successfully',
-      order,
+      order, // Order should include the voiceNote field now
     });
   } catch (error) {
-    console.error('Error placing order:', error);  // Improved error logging
+    console.error('Error placing order:', error);
     res.status(500).json({ message: 'Server error', error: error.message || error });
   }
 };
+
+
+
+
 
 
 
