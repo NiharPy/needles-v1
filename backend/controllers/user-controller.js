@@ -153,10 +153,10 @@ const verifyOtp = async (req, res) => {
   // Controller to update user's location
   const updateUserLocation = async (req, res) => {
     try {
-      const { userId } = req.params; // Get userId from URL params
-      console.log("Received userId:", userId, "Type of userId:", typeof userId); // Log for debugging
+      const { userId } = req.params;
+      console.log("Received userId:", userId, "Type of userId:", typeof userId);
   
-      const { lat, lng } = req.body;
+      const { lat, lng, flatNumber, block, street } = req.body;
   
       // Validate the userId format before processing
       if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -166,20 +166,45 @@ const verifyOtp = async (req, res) => {
       // Convert userId to ObjectId using 'new' keyword
       const validUserId = new mongoose.Types.ObjectId(userId);
   
-      // Call geocoding function to get formatted address
-      const formattedAddress = await getPlaceNameFromLatLng(lat, lng);
+      // Validate that required address fields are provided
+      if (!flatNumber || !block || !street) {
+        return res.status(400).json({
+          error: "Flat number, block, and street are required fields",
+        });
+      }
   
-      // Update user location
+      // Fetch formatted address using geocoding API
+      let formattedAddress = null;
+      if (lat && lng) {
+        try {
+          formattedAddress = await getPlaceNameFromLatLng(lat, lng);  // Directly get the formatted address
+          console.log("Formatted Address Found:", formattedAddress); // Log the formatted address
+          if (!formattedAddress) {
+            formattedAddress = "Address not found";  // Fallback if no formatted address
+            console.log("No formatted address found.");
+          }
+        } catch (error) {
+          console.error("Error fetching formatted address:", error.message);
+          return res.status(400).json({ error: "Unable to fetch formatted address" });
+        }
+      }
+  
+      console.log("Final formattedAddress value:", formattedAddress); // Log the final value of formattedAddress
+  
+      // Proceed to update the user's location
       const updatedUser = await UserModel.findByIdAndUpdate(
         validUserId,
         {
           $set: {
             'address.location.lat': lat,
             'address.location.lng': lng,
-            'address.street': formattedAddress, // Store formatted address
+            'address.flatNumber': flatNumber,
+            'address.block': block,
+            'address.street': street,
+            'address.formattedAddress': formattedAddress, // Set the formatted address
           },
         },
-        { new: true } // Return the updated user
+        { new: true }
       );
   
       if (!updatedUser) {
@@ -195,6 +220,7 @@ const verifyOtp = async (req, res) => {
       res.status(500).json({ error: "An unexpected error occurred" });
     }
   };
+  
   
 
 export { updateUserLocation };

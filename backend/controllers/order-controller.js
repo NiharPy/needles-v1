@@ -185,12 +185,31 @@ const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    // Check if boutique exists
+    if (!order.boutiqueId) {
+      return res.status(400).json({ message: 'Boutique not found in the order' });
+    }
+
+    const boutique = await BoutiqueModel.findById(order.boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
+    }
+
+    // Validate dress type against boutique available types
+    if (!boutique.dressTypes.includes(order.dressType)) {
+      return res.status(400).json({ message: `Invalid dress type: ${order.dressType}` });
+    }
+
+    // Validate measurements for the dress type
+    if (order.dressType === 'Lehenga' && (!order.measurements.waist || !order.measurements.hip)) {
+      return res.status(400).json({ message: 'Missing required measurements for Lehenga.' });
+    }
+
     // Update order status
     order.status = status;
     await order.save();
 
     // Update status in Boutique's orders
-    const boutique = await BoutiqueModel.findById(order.boutiqueId);
     const boutiqueOrder = boutique.orders.find((o) => o.orderId.toString() === orderId.toString());
     if (boutiqueOrder) {
       boutiqueOrder.status = status;

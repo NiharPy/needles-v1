@@ -28,7 +28,7 @@ router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(getDress
 
 router.route('/:userId/order/place').post(authMiddleware, upload.fields([
   { name: 'referralImage', maxCount: 1 },
-  { name: 'voiceNotes', maxCount: 1 }
+  { name: 'voiceNotes', maxCount: 5 }
 ]), placeOrder);
 
 router.route('/location/:userId').put(authMiddleware,updateUserLocation);

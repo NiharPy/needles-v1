@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema({
       lat: { type: Number, required: false },
       lng: { type: Number, required: false },
     },
+    formattedAddress : {type: String, required: false},
   },
   role: {
     type: String,
