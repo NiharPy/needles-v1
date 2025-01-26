@@ -144,27 +144,42 @@ const verifyOtpFB = async (req, res) => {
     try {
       const { query, location } = req.query;
   
+      // Construct search conditions dynamically
       const searchConditions = {
-        $or: [
-          query ? { name: { $regex: query, $options: 'i' } } : null,
-          location ? { "location.address": { $regex: location, $options: 'i' } } : null,
-          query ? { "dressTypes.typeName": { $regex: query, $options: 'i' } } : null,
-        ].filter(Boolean),
+        $and: [
+          query
+            ? {
+                $or: [
+                  { name: { $regex: query, $options: 'i' } }, // Search in boutique name
+                  { "dressTypes.type": { $regex: query, $options: 'i' } }, // Search in dressTypes.type
+                ],
+              }
+            : null,
+          location
+            ? {
+                "location.address": { $regex: location, $options: 'i' }, // Search in boutique location
+              }
+            : null,
+        ].filter(Boolean), // Remove null entries
       };
   
-      const fieldsToSelect = 'name location.address dressTypes.typeName dressTypes.images averageRating totalRatings';
+      // Fields to select
+      const fieldsToSelect = 'name location.address dressTypes.type averageRating totalRatings';
   
-      const Boutique_found = await BoutiqueModel.find(searchConditions, fieldsToSelect);
+      // Fetch boutiques based on search conditions
+      const boutiques = await BoutiqueModel.find(searchConditions, fieldsToSelect);
   
-      res.status(200).send(Boutique_found);
+      // Send the response
+      res.status(200).json(boutiques);
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching boutiques:', error);
       res.status(500).json({
         success: false,
         message: 'Server error. Unable to fetch search results.',
       });
     }
   };
+  
 
 const viewBoutiqueDetails = async (req, res) => {
   try {

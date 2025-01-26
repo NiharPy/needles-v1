@@ -31,7 +31,7 @@ router.route('/:userId/order/place').post(authMiddleware, upload.fields([
   { name: 'voiceNotes', maxCount: 5 }
 ]), placeOrder);
 
-router.route('/location/:userId').put(authMiddleware,updateUserLocation);
+router.route('/:userId/location').put(authMiddleware,updateUserLocation);
 
 
 router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
