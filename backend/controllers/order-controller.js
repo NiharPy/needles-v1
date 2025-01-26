@@ -168,13 +168,16 @@ const placeOrder = async (req, res) => {
  * @route PATCH /order/:orderId/status
  * @access Private (Boutique only)
  */
+
+
 const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    // Validate status
     const validStatuses = ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'];
+
+    // Validate status
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
@@ -193,16 +196,6 @@ const updateOrderStatus = async (req, res) => {
     const boutique = await BoutiqueModel.findById(order.boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
-    }
-
-    // Validate dress type against boutique available types
-    if (!boutique.dressTypes.includes(order.dressType)) {
-      return res.status(400).json({ message: `Invalid dress type: ${order.dressType}` });
-    }
-
-    // Validate measurements for the dress type
-    if (order.dressType === 'Lehenga' && (!order.measurements.waist || !order.measurements.hip)) {
-      return res.status(400).json({ message: 'Missing required measurements for Lehenga.' });
     }
 
     // Update order status
@@ -259,10 +252,11 @@ const updateOrderStatus = async (req, res) => {
       status,
     });
   } catch (error) {
-    console.error(error);
+    console.error('Error updating order status:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 /**
  * @desc Get order details by ID (User or Boutique)
