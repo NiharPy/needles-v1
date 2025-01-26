@@ -44,6 +44,8 @@ const placeOrder = async (req, res) => {
       location,
     } = req.body;
 
+    console.log('Received files:', req.files);
+
     console.log("req body : ", req.body);
 
     let measurements;

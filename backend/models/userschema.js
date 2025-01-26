@@ -10,12 +10,12 @@ const userSchema = new mongoose.Schema({
   },
   otp : {type : String, required : true},
   address: {
-    flatNumber: { type: String, required: true },
-    block: { type: String, required: true },
-    street: { type: String, required: true },
+    flatNumber: { type: String, required: false },
+    block: { type: String, required: false },
+    street: { type: String, required: false },
     location: {
-      lat: { type: Number, required: true },
-      lng: { type: Number, required: true },
+      lat: { type: Number, required: false },
+      lng: { type: Number, required: false },
     },
   },
   role: {

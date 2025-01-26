@@ -7,6 +7,7 @@ import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getStep2Images, placeODOrder, getStep1Images} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
+import { updateUserLocation } from '../controllers/user-controller.js';
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -29,6 +30,8 @@ router.route('/:userId/order/place').post(authMiddleware, upload.fields([
   { name: 'referralImage', maxCount: 1 },
   { name: 'voiceNotes', maxCount: 1 }
 ]), placeOrder);
+
+router.route('/location/:userId').put(authMiddleware,updateUserLocation);
 
 
 router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
