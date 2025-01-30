@@ -8,6 +8,7 @@ import { getDressTypes, getStep2Images, placeODOrder, getStep1Images} from '../c
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation } from '../controllers/user-controller.js';
+import { getBill, processPayment } from '../controllers/order-controller.js';
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -55,6 +56,10 @@ router.route('/:userId/chat/close').post(authMiddleware, closeChatSession);
 router.route('/:userId/alterations/chat/history').get(authMiddleware, getChatSessionHistory);
 
 router.route("/:userId/refresh-token").post(refreshAccessToken);
+
+router.route("/:userId/order/:orderId/bill").get(authMiddleware,getBill);
+
+router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
 //odd
 

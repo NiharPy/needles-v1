@@ -28,7 +28,7 @@ const boutiqueSchema = new mongoose.Schema({
         type: String,
         required: true,
       },
-      images: [String], // Array of image URLs for each dress type
+      images: [{type : String}], // Array of image URLs for each dress type
       measurementRequirements: [String],
     },
   ],

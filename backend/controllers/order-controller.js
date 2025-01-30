@@ -5,6 +5,7 @@ import nodemailer from 'nodemailer';
 import AltorderModel from '../models/AlterOrderSchema.js';
 import ChatModel from '../models/Chat.js';
 import mongoose from 'mongoose';
+import axios from 'axios';
 
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
@@ -44,14 +45,9 @@ const placeOrder = async (req, res) => {
       location,
     } = req.body;
 
-    console.log('Received files:', req.files);
-
-    console.log("req body : ", req.body);
-
     let measurements;
     if (typeof rawMeasurements === "string") {
       const sanitizedMeasurements = rawMeasurements.trim();
-
       try {
         measurements = JSON.parse(sanitizedMeasurements); // Parse the sanitized string
       } catch (error) {
@@ -74,22 +70,19 @@ const placeOrder = async (req, res) => {
       const maxFiles = 5;
       req.files.voiceNotes.slice(0, maxFiles).forEach((file) => {
         voiceNoteUrl.push(file.path); // Add each audio file's URL up to 5
-        });
+      });
     }
 
-    // Find the user
     const User = await UserModel.findById(userId);
     if (!User) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Find the boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    // Validate dressType exists in boutique's dressTypes
     const dressTypeData = boutique.dressTypes.find(
       (type) => type.type === dressType
     );
@@ -99,23 +92,31 @@ const placeOrder = async (req, res) => {
         .json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
-    // Validate measurements based on the boutique-specific requirements
-    const requiredMeasurements = dressTypeData.measurementRequirements || [];
-    const providedKeys = Object.keys(measurements);
-    const isValidMeasurements = requiredMeasurements.every((key) =>
-      providedKeys.includes(key)
-    );
-
-    if (!isValidMeasurements) {
+    // Validate measurements if pickUp is false
+    if (!pickUp && !measurements) {
       return res.status(400).json({
-        message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(
-          ', '
-        )}`,
+        message: `Measurements are required for dress type ${dressType} when pickUp is false`,
       });
     }
 
+    if (!pickUp) {
+      const requiredMeasurements = dressTypeData.measurementRequirements || [];
+      const providedKeys = Object.keys(measurements);
+      const isValidMeasurements = requiredMeasurements.every((key) =>
+        providedKeys.includes(key)
+      );
+
+      if (!isValidMeasurements) {
+        return res.status(400).json({
+          message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(
+            ', '
+          )}`,
+        });
+      }
+    }
+
     // Upload referral image to Cloudinary
-    const referralImage = req.files.referralImage[0].path; // Access Cloudinary URL from referralImage
+    const referralImage = req.files.referralImage[0].path;
 
     // Create new order
     const order = await OrderModel.create({
@@ -123,42 +124,42 @@ const placeOrder = async (req, res) => {
       boutiqueId: boutique._id,
       pickUp,
       dressType,
-      measurements,
-      referralImage, // Use the Cloudinary URL for the image
-      location: User.address, // Assuming location comes from user's address
-      voiceNote: voiceNoteUrl, // Use the Cloudinary URL for the voice note
+      measurements: pickUp ? undefined : measurements, // Only set measurements if pickUp is false
+      referralImage,
+      location: User.address,
+      voiceNote: voiceNoteUrl,
       status: 'Pending',
+    }).catch(error => {
+      console.error('Order creation error:', error); // Log the validation error
+      if (error.errors) {
+        Object.keys(error.errors).forEach((key) => {
+          console.error(`Validation failed on ${key}: ${error.errors[key].message}`);
+        });
+      }
+      throw error;
     });
 
-    // Add order to Boutique's orders
     boutique.orders.push({
       orderId: order._id,
       status: 'Pending',
     });
     await boutique.save();
 
-    // Add order to User's orders
     User.orders.push({
       orderId: order._id,
       status: 'Pending',
     });
     await User.save();
 
-    // Send response
     res.status(201).json({
       message: 'Order placed successfully',
-      order, // Order should include the voiceNote field now
+      order,
     });
   } catch (error) {
     console.error('Error placing order:', error);
     res.status(500).json({ message: 'Server error', error: error.message || error });
   }
 };
-
-
-
-
-
 
 
 
@@ -174,8 +175,6 @@ const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
-
-    const validStatuses = ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed'];
 
     // Validate status
     if (!validStatuses.includes(status)) {
@@ -588,6 +587,158 @@ const getChatSessionHistory = async (req, res) => {
   }
 };
 
+const createBill = async (req, res) => {
+  try {
+    const { boutiqueId, orderId, selectedItems, additionalCost, additionalCostReason } = req.body;
+
+    // Find the boutique and order using their respective IDs
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    const order = await OrderModel.findById(orderId).populate("userId");
+
+    if (!boutique || !order) {
+      return res.status(404).json({ error: "Boutique or Order not found" });
+    }
+
+    // Check if the order is accepted
+    if (order.status !== 'Accepted') {
+      return res.status(400).json({ error: "The order must be accepted before creating a bill" });
+    }
+
+    let totalAmount = 0;
+    let billDetails = {};
+
+    // Loop through the selected items to calculate the total amount
+    selectedItems.forEach(({ item, quantity }) => {
+      const catalogItem = boutique.catalogue.find((c) => c.itemName.includes(item));
+      if (catalogItem) {
+        const price = catalogItem.price[0] * quantity; // Assuming price is an array
+        billDetails[item] = price;
+        totalAmount += price;
+      }
+    });
+
+    // Apply 5% platform fee
+    const platformFee = totalAmount * 0.02;
+    totalAmount += platformFee;
+
+    // Calculate delivery fee using Google Maps API
+    const userLocation = order.userId.address.location;
+    const boutiqueLocation = boutique.location;
+    const distance = await getDistance(userLocation, boutiqueLocation);
+    const deliveryFee = calculateDeliveryFee(distance);
+    totalAmount += deliveryFee;
+
+    // Add additional cost if provided
+    let additionalCostDetails = { amount: 0, reason: "" };
+    if (additionalCost && additionalCostReason) {
+      additionalCostDetails.amount = additionalCost;
+      additionalCostDetails.reason = additionalCostReason;
+      totalAmount += additionalCost;
+    }
+
+    // Store the bill inside the order schema
+    order.bill = {
+      items: billDetails,
+      platformFee,
+      deliveryFee,
+      additionalCost: additionalCostDetails,
+      totalAmount,
+      status: "Pending",
+    };
+    order.totalAmount = totalAmount;
+
+    // Save the updated order
+    await order.save();
+
+    res.json({ success: true, bill: order.bill });
+  } catch (error) {
+    console.error("Error creating bill:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+// Function to get distance using Google Maps API
+const getDistance = async (userLocation, boutiqueLocation) => {
+  try {
+    const response = await axios.get(
+      `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${userLocation.lat},${userLocation.lng}&destinations=${boutiqueLocation.latitude},${boutiqueLocation.longitude}&key=${process.env.GOOGLE_MAPS_API_KEY}`
+    );
+    return response.data.rows[0].elements[0].distance.value / 1000; // Distance in KM
+  } catch (error) {
+    return 5; // Default fee if API fails
+  }
+};
+
+// Simple delivery fee calculation
+const calculateDeliveryFee = (distance) => {
+  return distance * 10; // ₹10 per KM
+};
+
+// Get Bill for User
+const getBill = async (req, res) => {
+  try {
+    const { userId, orderId } = req.params;
+    
+    // Fetch the order and check ownership
+    const order = await OrderModel.findById(orderId);
+    
+    // Debugging log to check the content of the order
+    console.log(order);
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    if (order.userId.toString() !== userId) {
+      return res.status(403).json({ error: "Unauthorized access to this order" });
+    }
+
+    // Check if the bill exists in the order
+    if (!order.bill) {
+      return res.status(404).json({ error: "Bill not found for this order" });
+    }
+
+    res.json({ success: true, bill: order.bill });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+// Payment Process (Placeholder Without Razorpay)
+const processPayment = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const order = await OrderModel.findById(orderId).populate("boutiqueId");  // Use OrderModel here
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    order.paymentStatus = "Paid";
+    await order.save();
+
+    // Notify Boutique
+    notifyBoutique(order.boutiqueId, orderId);
+
+    res.json({ success: true, message: "Payment successful!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Function to notify boutique via Email (Placeholder Example)
+const notifyBoutique = async (boutiqueId, orderId) => {
+  try {
+    const boutique = await BoutiqueModel.findById(boutiqueId);  // Use BoutiqueModel here
+    if (!boutique) return;
+
+    // Send an email notification (assuming an email sending service is set up)
+    console.log(`Sending email to ${boutique.email} about payment for Order ${orderId}`);
+  } catch (error) {
+    console.error("Error notifying boutique: ", error);
+  }
+};
+
+export {createBill, processPayment, getBill};
 
 export {startChatSessionUser, startChatSessionBoutique, sendMessageUser, sendMessageBoutique, closeChatSession, getChatSessionHistory};
 

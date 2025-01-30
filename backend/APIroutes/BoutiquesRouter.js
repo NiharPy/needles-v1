@@ -2,6 +2,9 @@ import express from 'express';
 import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType} from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { updateOrderStatus, getOrderDetails, startChatSessionBoutique, sendMessageBoutique, getChatSessionHistory } from '../controllers/order-controller.js';
+
+import {createBill} from '../controllers/order-controller.js';
+
 const router = express.Router();
 
 router.route("/").get(boutiquesData);
@@ -29,5 +32,9 @@ router.route('/:boutiqueId/chat/start').post(authMiddleware, startChatSessionBou
 router.route('/:boutiqueId/chat/sendMessage').post(authMiddleware, sendMessageBoutique);
 
 router.route('/:boutiqueId/chat/history').get(authMiddleware, getChatSessionHistory);
+
+router.route("/:boutiqueId/createBill").post(authMiddleware,createBill);
+
+
 
 export default router;
