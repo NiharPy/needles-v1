@@ -748,6 +748,8 @@ export {getUserAlterationOrders};
 
 export {requestAlteration};
 
+export default sendEmailToAdmin;
+
 
 export { rateOrder };
 

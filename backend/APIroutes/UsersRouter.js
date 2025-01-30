@@ -9,6 +9,7 @@ import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation } from '../controllers/user-controller.js';
 import { getBill, processPayment } from '../controllers/order-controller.js';
+import { placeCAASOrder } from '../controllers/CAAS-controller.js';
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -72,3 +73,14 @@ router.route("/:userId/odd/select/:dressType/Hands").get(authMiddleware, getStep
 router.route("/:userId/odd/order-placed").post(authMiddleware,placeODOrder);
 
 export default router;
+
+//CAAS
+
+router.route("/:userId/CAAS/dresstypes").get(authMiddleware,getDressTypes);
+
+router.route("/:userId/CAAS/select/:dressType/Body").get(authMiddleware, getStep1Images);
+
+router.route("/:userId/CAAS/select/:dressType/Hands").get(authMiddleware, getStep2Images);
+
+router.route("/:userId/CAAS/order-placed").post(authMiddleware,placeCAASOrder);
+
