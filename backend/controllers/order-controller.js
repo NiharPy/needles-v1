@@ -176,6 +176,15 @@ const updateOrderStatus = async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
+    const validStatuses = [
+      'Pending', 
+      'Accepted', 
+      'Declined', 
+      'In Progress', 
+      'Ready for Delivery', 
+      'Completed'
+    ];
+    
     // Validate status
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
@@ -589,9 +598,9 @@ const getChatSessionHistory = async (req, res) => {
 
 const createBill = async (req, res) => {
   try {
-    const { boutiqueId, orderId, selectedItems, additionalCost, additionalCostReason } = req.body;
+    const { boutiqueId, orderId, selectedItems, additionalCost } = req.body;
 
-    // Find the boutique and order using their respective IDs
+    // Find the boutique and order
     const boutique = await BoutiqueModel.findById(boutiqueId);
     const order = await OrderModel.findById(orderId).populate("userId");
 
@@ -599,55 +608,65 @@ const createBill = async (req, res) => {
       return res.status(404).json({ error: "Boutique or Order not found" });
     }
 
-    // Check if the order is accepted
-    if (order.status !== 'Accepted') {
+    if (order.status !== "Accepted") {
       return res.status(400).json({ error: "The order must be accepted before creating a bill" });
     }
 
     let totalAmount = 0;
     let billDetails = {};
 
-    // Loop through the selected items to calculate the total amount
+    // Calculate total from selected items
     selectedItems.forEach(({ item, quantity }) => {
       const catalogItem = boutique.catalogue.find((c) => c.itemName.includes(item));
       if (catalogItem) {
-        const price = catalogItem.price[0] * quantity; // Assuming price is an array
+        const price = catalogItem.price[0] * quantity;
         billDetails[item] = price;
         totalAmount += price;
       }
     });
 
-    // Apply 5% platform fee
+    // Platform fee (2%)
     const platformFee = totalAmount * 0.02;
     totalAmount += platformFee;
 
-    // Calculate delivery fee using Google Maps API
+    // Delivery Fee
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
     const deliveryFee = calculateDeliveryFee(distance);
     totalAmount += deliveryFee;
 
-    // Add additional cost if provided
-    let additionalCostDetails = { amount: 0, reason: "" };
-    if (additionalCost && additionalCostReason) {
-      additionalCostDetails.amount = additionalCost;
-      additionalCostDetails.reason = additionalCostReason;
-      totalAmount += additionalCost;
+    // Handle additional cost
+    let additionalCostValue = 0;
+    let additionalCostReason = "Not specified";
+
+    if (additionalCost && typeof additionalCost === "object" && additionalCost.amount) {
+      additionalCostValue = parseFloat(additionalCost.amount);
+      additionalCostReason = additionalCost.reason || "Not specified";
     }
 
-    // Store the bill inside the order schema
+    if (isNaN(additionalCostValue) || additionalCostValue < 0) {
+      additionalCostValue = 0;
+    }
+
+    totalAmount += additionalCostValue;
+
+    // Update order bill
     order.bill = {
       items: billDetails,
       platformFee,
       deliveryFee,
-      additionalCost: additionalCostDetails,
+      additionalCost: {
+        amount: additionalCostValue,
+        reason: additionalCostReason
+      },
       totalAmount,
-      status: "Pending",
+      status: "Pending"
     };
-    order.totalAmount = totalAmount;
 
-    // Save the updated order
+    // Ensure Mongoose tracks changes
+    order.markModified("bill");
+    order.totalAmount = totalAmount;
     await order.save();
 
     res.json({ success: true, bill: order.bill });
@@ -656,6 +675,8 @@ const createBill = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
 
 
 // Function to get distance using Google Maps API
