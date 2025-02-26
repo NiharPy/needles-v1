@@ -4,7 +4,7 @@ import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controll
 import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, startChatSessionUser, sendMessageUser, getChatSessionHistory, closeChatSession } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
-import { getDressTypes, getStep2Images, placeODOrder, getStep1Images} from '../controllers/ODdelivery-controller.js';
+import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation } from '../controllers/user-controller.js';
@@ -66,9 +66,15 @@ router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
 router.route("/:userId/odd/dresstypes").get(authMiddleware,getDressTypes);
 
-router.route("/:userId/odd/select/:dressType/Body").get(authMiddleware, getStep1Images);
+router.route("/:userId/odd/select/:dressType/subdresstype").get(authMiddleware, getSubDressTypes);
 
-router.route("/:userId/odd/select/:dressType/Hands").get(authMiddleware, getStep2Images);
+router.route("/:userId/odd/select/:dressType/Front").get(authMiddleware, getFrontImages);
+
+router.route("/:userId/odd/select/:dressType/:subdresstype/Front").get(authMiddleware, getFrontImages);
+
+router.route("/:userId/odd/select/:dressType/:subdresstype/Back").get(authMiddleware, getBackImages);
+
+router.route("/:userId/odd/select/:dressType/:subdresstype/Sleeve").get(authMiddleware,getSleeveImages);
 
 router.route("/:userId/odd/order-placed").post(authMiddleware,placeODOrder);
 
@@ -78,9 +84,9 @@ export default router;
 
 router.route("/:userId/CAAS/dresstypes").get(authMiddleware,getDressTypes);
 
-router.route("/:userId/CAAS/select/:dressType/Body").get(authMiddleware, getStep1Images);
+router.route("/:userId/CAAS/select/:dressType/Body").get(authMiddleware, getFrontImages);
 
-router.route("/:userId/CAAS/select/:dressType/Hands").get(authMiddleware, getStep2Images);
+router.route("/:userId/CAAS/select/:dressType/Hands").get(authMiddleware, getBackImages);
 
 router.route("/:userId/CAAS/order-placed").post(authMiddleware,placeCAASOrder);
 

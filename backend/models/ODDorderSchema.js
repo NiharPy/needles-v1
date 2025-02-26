@@ -1,11 +1,8 @@
 import mongoose from 'mongoose';
 
 const measurementRequirements = {
-    Lehenga: ['Waist', 'Hip', 'Length'],
-    SareeBlouse: ['Chest', 'Waist', 'Neck'],
-    Kurta: ['Chest', 'Waist', 'Length'],
-    Shirt: ['Chest', 'Sleeve', 'Length'],
-    Gown: ['Chest', 'Waist', 'Hips', 'Length'],
+    Blouse: ['Length', 'Upper chest', 'Center chest', 'Shoulder Width', 'Sleeve Length', 'Sleeve Round', 'Middle hand round', 'Front neck height', 'Back neck height', 'Waist loose', 'Front Dart point', 'Full shoulder', 'Armhole Round'],
+    KidsFrock: ['Full Length', 'Body Length', 'Bottom Length', 'Chest Round', 'Waist Round', 'Armhole Round', 'Shoulder Width', 'Sleeve Length', 'Sleeve Round', 'Full Shoulder', 'Front Neck height', 'Back Neck Height'],
   };
   
   const ODitemSchema = new mongoose.Schema({
@@ -13,7 +10,7 @@ const measurementRequirements = {
       type: String,
       required: true,
     },
-    type: {
+    imageUrl: {
       type: String,
       required: true,
     },

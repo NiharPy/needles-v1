@@ -3,11 +3,16 @@ import UserModel from '../models/userschema.js';
 import nodemailer from 'nodemailer';
 import twilio from "twilio";
 
+const measurementRequirements = {
+  Blouse: ['Length', 'Upper chest', 'Center chest', 'Shoulder Width', 'Sleeve Length', 'Sleeve Round', 'Middle hand round', 'Front neck height', 'Back neck height', 'Waist loose', 'Front Dart point', 'Full shoulder', 'Armhole Round'],
+  KidsFrock: ['Full Length', 'Body Length', 'Bottom Length', 'Chest Round', 'Waist Round', 'Armhole Round', 'Shoulder Width', 'Sleeve Length', 'Sleeve Round', 'Full Shoulder', 'Front Neck height', 'Back Neck Height'],
+};
+
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
   auth: {
-    user: 'nihar.neelala124@gmail.com', // Replace with your email
-    pass: 'vccu mdgc lwgz iglj', // Replace with your email password or app-specific password
+    user: process.env.EMAIL_USER, // Replace with your email
+    pass: process.env.EMAIL_PASS, // Replace with your email password or app-specific password
   },
 });
 
@@ -26,158 +31,360 @@ const sendEmailToAdmin = async (subject, text) => {
 };
 
 const dressTypeData = {
-    Lehenga: {
-      step1Images: [
-        { serialCode: '001', imageUrl: 'lehenga1-step1.jpg' },
-        { serialCode: '002', imageUrl: 'lehenga2-step1.jpg' },
-      ],
-      step2Images: [
-        { serialCode: '101', imageUrl: 'lehenga1-step2.jpg' },
-        { serialCode: '102', imageUrl: 'lehenga2-step2.jpg' },
+    Blouse: {
+      '3 Dart': {
+        Front: [
+          { serialCode: '001A', imageUrl: 'blouse-3dart1-step1.jpg' },
+          { serialCode: '002A', imageUrl: 'blouse-3dart2-step1.jpg' },
+        ],
+        Back: [
+          { serialCode: '101A', imageUrl: 'lehenga1-step2.jpg' },
+          { serialCode: '102A', imageUrl: 'lehenga2-step2.jpg' },
+        ],
+        Sleeve: [
+          { serialCode: '201A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/dwglvyq0avguu1vxhmg9.png" },
+          { serialCode: '202A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/wmtyf2nze2ox2ibyfbde.png" },
+          { serialCode: '203A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/wq1m2vspqkyjn5wmwj9f.png" },
+          { serialCode: '204A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/t16zaeperlj79blwttfu.png" },
+          { serialCode: '205A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/why2iu9sk2ppghsqurmy.png" },
+          { serialCode: '206A', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/k7zdnqsi6bqfzookg85q.png" },
+        ],
+      },
+      'Princess Cut': {
+        Front: [
+          { serialCode: '001B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740555495/ODD-cloud/lngcq9nus2hwo9rswjdb.png" },
+          { serialCode: '002B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556055/ODD-cloud/uo03tqhpkabxjaialzlq.png" },
+          { serialCode: '003B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556457/ODD-cloud/m8qiezde1ibgyh16ysm6.png" },
+          { serialCode: '004B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556560/ODD-cloud/fiy47perelgwl4lcm2by.png" },
+          { serialCode: '005B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556924/ODD-cloud/ktnwbjetco3my1hevten.png" },
+          { serialCode: '006B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556925/ODD-cloud/k1m5et9ronuqhzqsxvc8.png" },
+          { serialCode: '007B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556925/ODD-cloud/z7kqutncm8qb7gjmfwwg.png" },
+          { serialCode: '008B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740556925/ODD-cloud/vqg0pbbcluwqmjtaj9bc.png" },
+          { serialCode: '009B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557398/ODD-cloud/lpzdk5jfzm3cv1avjx0r.png" },
+          { serialCode: '010B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557421/ODD-cloud/tnfdyys6rez9sjxmshba.png" },
+        ],
+        Back: [
+          { serialCode: '101B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557841/ODD-cloud/Princess%20Cut%20Back/vlfwknos9hvwtqq1dq5s.png" },
+          { serialCode: '102B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557841/ODD-cloud/Princess%20Cut%20Back/znejymjig0drmqrrboo0.png" },
+          { serialCode: '103B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557841/ODD-cloud/Princess%20Cut%20Back/xl487pfeqmaffae3nm0u.png" },
+          { serialCode: '104B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/xl2grxfycu4tsh7wln1q.png" },
+          { serialCode: '105B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/sr70un1wteec9yg2wcdb.png" },
+          { serialCode: '106B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/exoktfprwu0h2vjre8cd.png" },
+          { serialCode: '107B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/qadbuqb5xhfqvaoxdjpi.png" },
+          { serialCode: '108B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/hhwoxn9kpzonuk8bk0kt.png" },
+          { serialCode: '109B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740557842/ODD-cloud/Princess%20Cut%20Back/bwqr1l3jjdbwhff7shnb.png" },
+
+        ],
+        Sleeve: [
+          { serialCode: '201B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/dwglvyq0avguu1vxhmg9.png" },
+          { serialCode: '202B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/wmtyf2nze2ox2ibyfbde.png" },
+          { serialCode: '203B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/wq1m2vspqkyjn5wmwj9f.png" },
+          { serialCode: '204B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/t16zaeperlj79blwttfu.png" },
+          { serialCode: '205B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/why2iu9sk2ppghsqurmy.png" },
+          { serialCode: '206B', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/k7zdnqsi6bqfzookg85q.png" },
+        ],
+      },
+      'Sabyasachi': {
+        Front: [
+          { serialCode: '001C', imageUrl: 'blouse-sabyasachi1-step1.jpg' },
+          { serialCode: '002C', imageUrl: 'blouse-sabyasachi2-step1.jpg' },
+        ],
+        Back: [
+          { serialCode: '101C', imageUrl: 'lehenga1-step2.jpg' },
+          { serialCode: '102C', imageUrl: 'lehenga2-step2.jpg' },
+        ],
+        Sleeve: [
+          { serialCode: '201C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/dwglvyq0avguu1vxhmg9.png" },
+          { serialCode: '202C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558532/ODD-cloud/sleeve/wmtyf2nze2ox2ibyfbde.png" },
+          { serialCode: '203C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/wq1m2vspqkyjn5wmwj9f.png" },
+          { serialCode: '204C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/t16zaeperlj79blwttfu.png" },
+          { serialCode: '205C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/why2iu9sk2ppghsqurmy.png" },
+          { serialCode: '206C', imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1740558531/ODD-cloud/sleeve/k7zdnqsi6bqfzookg85q.png" },
+        ],
+      },
+    },
+    KidsFrock: {
+      Front: [
+        { serialCode: '301A', imageUrl: 'kidsfrock1-step1.jpg' },
+        { serialCode: '302A', imageUrl: 'kidsfrock2-step1.jpg' },
       ],
     },
-    SareeBlouse: {
-      step1Images: [
-        { serialCode: '003', imageUrl: 'saree1-step1.jpg' },
-        { serialCode: '004', imageUrl: 'saree2-step1.jpg' },
-      ],
-      step2Images: [
-        { serialCode: '103', imageUrl: 'saree1-step2.jpg' },
-        { serialCode: '104', imageUrl: 'saree2-step2.jpg' },
-      ],
-    },
-    // Add more dress types and images as needed
-  };
+};
+
+const getDressTypes = async (req, res) => {
+  try {
+    const dressTypes = Object.keys(measurementRequirements).map((type) => ({ dressType: type }));
+
+    res.status(200).json({ message: 'Available dress types.', data: dressTypes });
+  } catch (error) {
+    console.error('Error fetching dress types:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
 
 
-  const getDressTypes = async (req, res) => {
-    try {
-      const dressTypes = Object.keys(dressTypeData); // Extract all dress types
-      const response = dressTypes.map((type) => ({
-        dressType: type, // Only include dress type in the response
-      }));
-      res.status(200).json({ message: 'Available dress types.', data: response });
-    } catch (error) {
-      console.error('Error fetching dress types:', error);
-      res.status(500).json({ message: 'Internal server error.' });
-    }
-  };
 
-  const getStep1Images = async (req, res) => {
-    try {
+
+const getSubDressTypes = async (req, res) => {
+  try {
       const { dressType } = req.params;
-  
+
+      if (!dressType || !dressTypeData[dressType]) {
+          return res.status(400).json({ message: 'Invalid dress type.' });
+      }
+
+      const subDressTypes = Object.keys(dressTypeData[dressType]);
+
+      res.status(200).json({ message: 'Subcategories fetched successfully.', subDressTypes });
+  } catch (error) {
+      console.error('Error fetching subcategories:', error);
+      res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+
+
+
+const getFrontImages = async (req, res) => {
+  try {
+      const { dressType, subdresstype } = req.params;  // Ensure the parameter names match the route
+
       // Validate the dress type
-      if (!dressType || !dressTypeData[dressType]) {
-        return res.status(400).json({ message: 'Invalid dress type.' });
+      if (!dressTypeData[dressType]) {
+          return res.status(400).json({ message: 'Invalid dress type.' });
       }
-  
-      // Fetch step 1 images for the specified dress type
-      const step1Images = dressTypeData[dressType].step1Images;
-      res.status(200).json({ message: 'Step 1 images fetched successfully.', step1Images });
-    } catch (error) {
-      console.error('Error fetching step 1 images:', error);
+
+      let frontImages;
+
+      // Check if the dress type has subcategories
+      if (typeof dressTypeData[dressType] === 'object' && !Array.isArray(dressTypeData[dressType].Front)) {
+          // If subdresstype is not provided, return an error
+          if (!subdresstype) {
+              return res.status(400).json({ message: 'Invalid subtype for dress type.' });
+          }
+
+          // Validate the subdresstype
+          if (!dressTypeData[dressType][subdresstype]) {
+              return res.status(400).json({ message: 'Invalid subtype for dress type.' });
+          }
+
+          // Fetch images from the subtype
+          frontImages = dressTypeData[dressType][subdresstype].Front;
+      } else {
+          // Fetch images directly if no subtypes exist for this dressType
+          frontImages = dressTypeData[dressType].Front;
+      }
+
+      // Validate if front images exist
+      if (!frontImages || frontImages.length === 0) {
+          return res.status(404).json({ message: 'No front images found.' });
+      }
+
+      res.status(200).json({ message: 'Front images fetched successfully.', frontImages });
+  } catch (error) {
+      console.error('Error fetching front images:', error);
       res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+
+
+  
+
+
+
+const getBackImages = async (req, res) => {
+  try {
+    const { dressType, subdresstype } = req.params; // Ensure parameter names match the route
+
+    // Validate the dress type
+    if (!dressTypeData[dressType]) {
+      return res.status(400).json({ message: 'Invalid dress type.' });
     }
-  };
-  
 
+    let backImages;
 
-
-  const getStep2Images = async (req, res) => {
-    try {
-      const { dressType } = req.params;
-  
-      if (!dressType || !dressTypeData[dressType]) {
-        return res.status(400).json({ message: 'Invalid dress type.' });
+    // Check if the dress type has subcategories (like Blouse)
+    if (typeof dressTypeData[dressType] === 'object' && !Array.isArray(dressTypeData[dressType].Back)) {
+      if (!subdresstype || !dressTypeData[dressType][subdresstype]) {
+        return res.status(400).json({ message: 'Invalid subtype for dress type.' });
       }
-  
-      const step2Images = dressTypeData[dressType].step2Images;
-      res.status(200).json({ message: 'Step 2 images fetched successfully.', step2Images });
-    } catch (error) {
-      console.error('Error fetching step 2 images:', error);
-      res.status(500).json({ message: 'Internal server error.' });
+      backImages = dressTypeData[dressType][subdresstype].Back;
+    } else {
+      backImages = dressTypeData[dressType].Back;
     }
-  };
 
-  const placeODOrder = async (req, res) => {
-    try {
-      const { userId, dressType, step1Serial, step2Serial, location, specialInstructions, pickUp, measurements } = req.body;
-  
-      // Check for required fields
-      if (!userId || !dressType || !step1Serial || !step2Serial) {
-        return res.status(400).json({ message: 'Missing required fields.' });
+    // Validate if back images exist
+    if (!backImages || backImages.length === 0) {
+      return res.status(404).json({ message: 'No back images found.' });
+    }
+
+    res.status(200).json({ message: 'Back images fetched successfully.', backImages });
+  } catch (error) {
+    console.error('Error fetching back images:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+const getSleeveImages = async (req, res) => {
+  try {
+    const { dressType, subdresstype } = req.params; // Ensure parameter names match the route
+
+    // Validate the dress type
+    if (!dressTypeData[dressType]) {
+      return res.status(400).json({ message: 'Invalid dress type.' });
+    }
+
+    let sleeveImages;
+
+    // Check if the dress type has subcategories (like Blouse)
+    if (typeof dressTypeData[dressType] === 'object' && !Array.isArray(dressTypeData[dressType].Sleeve)) {
+      if (!subdresstype || !dressTypeData[dressType][subdresstype]) {
+        return res.status(400).json({ message: 'Invalid subtype for dress type.' });
       }
-  
-      const User = await UserModel.findById(userId);
-      if (!User) {
-        return res.status(404).json({ message: 'User not found' });
+      sleeveImages = dressTypeData[dressType][subdresstype].Sleeve;
+    } else {
+      sleeveImages = dressTypeData[dressType].Sleeve;
+    }
+
+    // Validate if sleeve images exist
+    if (!sleeveImages || sleeveImages.length === 0) {
+      return res.status(404).json({ message: 'No sleeve images found.' });
+    }
+
+    res.status(200).json({ message: 'Sleeve images fetched successfully.', sleeveImages });
+  } catch (error) {
+    console.error('Error fetching sleeve images:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+
+const placeODOrder = async (req, res) => {
+  try {
+    const { userId, dressType, subType, FrontSerial, BackSerial, SleeveSerial, location, specialInstructions, pickUp, measurements } = req.body;
+
+    if (!userId || !dressType) {
+      return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    const User = await UserModel.findById(userId);
+    if (!User) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (!dressTypeData[dressType]) {
+      return res.status(400).json({ message: `Invalid dress type: ${dressType}` });
+    }
+
+    let requiredMeasurements = [];
+    let dressConfig = dressTypeData[dressType];
+
+    if (subType && dressTypeData[dressType][subType]) {
+      dressConfig = dressTypeData[dressType][subType];
+      requiredMeasurements = dressConfig.measurements || [];
+    } else {
+      requiredMeasurements = dressConfig.measurements || [];
+    }
+
+    let missingFields = [];
+    let ODitems = [];
+
+    // Function to find the corresponding imageUrl for a given serial code
+    const findImageUrl = (category, serial) => {
+      const item = dressConfig[category]?.find((item) => item.serialCode === serial);
+      return item ? item.imageUrl : null;
+    };
+
+    if (dressConfig.Front) {
+      if (!FrontSerial) {
+        missingFields.push("FrontSerial");
+      } else {
+        const imageUrl = findImageUrl('Front', FrontSerial);
+        ODitems.push({ serialCode: FrontSerial, imageUrl });
       }
-  
-      const validDressTypes = ['Lehenga', 'SareeBlouse', 'Kurta', 'Shirt', 'Gown']; // Example dress types
-      if (!validDressTypes.includes(dressType)) {
-        return res.status(400).json({ message: `Invalid dress type: ${dressType}` });
+    }
+    if (dressConfig.Back) {
+      if (!BackSerial) {
+        missingFields.push("BackSerial");
+      } else {
+        const imageUrl = findImageUrl('Back', BackSerial);
+        ODitems.push({ serialCode: BackSerial, imageUrl });
       }
-  
-      const measurementRequirements = {
-        Lehenga: ['Waist', 'Hip', 'Length'],
-        SareeBlouse: ['Chest', 'Waist', 'Neck'],
-        Kurta: ['Chest', 'Waist', 'Length'],
-        Shirt: ['Chest', 'Sleeve', 'Length'],
-        Gown: ['Chest', 'Waist', 'Hips', 'Length'],
-      };
-  
-      const requiredMeasurements = measurementRequirements[dressType] || [];
-      const providedKeys = Object.keys(measurements || {});
+    }
+    if (dressConfig.Sleeve) {
+      if (!SleeveSerial) {
+        missingFields.push("SleeveSerial");
+      } else {
+        const imageUrl = findImageUrl('Sleeve', SleeveSerial);
+        ODitems.push({ serialCode: SleeveSerial, imageUrl });
+      }
+    }
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
+    }
+
+    if (requiredMeasurements.length > 0 && !pickUp) {
+      if (!measurements || typeof measurements !== 'object') {
+        return res.status(400).json({ message: 'Measurements are required but not provided.' });
+      }
+
+      const providedKeys = Object.keys(measurements);
       const isValidMeasurements = requiredMeasurements.every((key) => providedKeys.includes(key));
-  
+
       if (!isValidMeasurements) {
         return res.status(400).json({
           message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(', ')}`,
         });
       }
-  
-      // Create the new ODD order
-      const newOrder = new ODorderModel({
-        userId: User._id,
-        ODitems: [
-          { serialCode: step1Serial, quantity: 1, type: 'Dress' },  // Add 'type' here
-          { serialCode: step2Serial, quantity: 1, type: 'Dress' }   // Add 'type' here
-        ],
-        measurements,
-        location: User.address,
-        specialInstructions,
-        pickUp,
-        status: 'Pending',
-        location: User.address  // Ensure 'location' is provided
-      });
-  
-      // Save the order to the database
-      await newOrder.save();
-  
-      // Update user with new order
-      User.ODDorders.push({
-        orderId: newOrder._id,
-        dressType,
-        ODitems: newOrder.ODitems,
-        status: 'Pending',
-        specialInstructions,
-      });
-  
-      await User.save();
+    }
 
-      const emailText = `
-      A new ODD order has been placed:
-      - Order ID: ${newOrder._id}
-      - User Location: ${User.address}
-      - Dress Type: ${dressType}
-      - Special Instructions: ${specialInstructions || 'None'}
+    const newOrder = new ODorderModel({
+      userId: User._id,
+      ODitems,
+      measurements: measurements || {},
+      location: location || User.address,
+      specialInstructions,
+      pickUp,
+      status: 'Pending',
+    });
+
+    await newOrder.save();
+
+    User.ODDorders.push({
+      orderId: newOrder._id,
+      dressType,
+      subType,
+      ODitems,
+      status: 'Pending',
+      specialInstructions,
+    });
+
+    await User.save();
+
+    let emailText = `
+    A new ODD order has been placed:
+    - Order ID: ${newOrder._id}
+    - User Location: ${User.address}
+    - Dress Type: ${dressType}
+    - Sub Type: ${subType || 'N/A'}
+    - Special Instructions: ${specialInstructions || 'None'}
     `;
-    
-    // Send email to admin (use your email sending function here)
+
+    if (pickUp) {
+      const pickUpEmailText = `
+      A new pickup request has been placed:
+      - Order ID: ${newOrder._id}
+      - Pickup Location: ${location || User.address}
+      - Formatted Address: ${User.formattedAddress || 'N/A'}
+      `;
+
+      await sendEmailToAdmin('New Pickup Request', pickUpEmailText);
+    }
+
     await sendEmailToAdmin('New ODD Order Placed', emailText);
 
-    // Send response to the client
     res.status(201).json({
       message: 'One-Day Delivery Order placed successfully.',
       order: newOrder,
@@ -188,6 +395,9 @@ const dressTypeData = {
     res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
+
+
   
 const updateODDDeliveryStatus = async (req, res) => {
     try {
@@ -245,4 +455,4 @@ const updateODDDeliveryStatus = async (req, res) => {
   };
 
 
-  export {getDressTypes,getStep1Images, getStep2Images, placeODOrder, updateODDDeliveryStatus};
+  export {getDressTypes,getFrontImages, getBackImages, placeODOrder, updateODDDeliveryStatus, getSubDressTypes, getSleeveImages};

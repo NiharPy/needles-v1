@@ -10,8 +10,8 @@ import axios from 'axios';
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
   auth: {
-    user: 'nihar.neelala124@gmail.com', // Replace with your email
-    pass: 'vccu mdgc lwgz iglj', // Replace with your email password or app-specific password
+    user: process.env.EMAIL_USER, // Replace with your email
+    pass: process.env.EMAIL_PASS, // Replace with your email password or app-specific password
   },
 });
 
