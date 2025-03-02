@@ -1,7 +1,7 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
-import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, startChatSessionUser, sendMessageUser, getChatSessionHistory, closeChatSession } from '../controllers/order-controller.js';
+import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages} from '../controllers/ODdelivery-controller.js';
@@ -48,13 +48,11 @@ router.route("/:userId/orders/request-alteration").post(authMiddleware, requestA
 
 router.route("/:userId/orders/alterations").get(authMiddleware, getUserAlterationOrders);
 
-router.route('/:userId/alterations/chat/start').post(authMiddleware, startChatSessionUser);
-
-router.route('/:userId/alterations/chat/sendMessage').post(authMiddleware, sendMessageUser);
-
-router.route('/:userId/chat/close').post(authMiddleware, closeChatSession);
-
-router.route('/:userId/alterations/chat/history').get(authMiddleware, getChatSessionHistory);
+router.route('/:userId/alterations/:altOrderId/submit').post(authMiddleware, upload.fields([
+  { name: "referenceImage", maxCount: 1 }, // Required
+  { name: "orderImage", maxCount: 3 }, // Required
+  { name: "voiceNotes", maxCount: 5 }, // Optional, max 5 files
+]), submitAlterationRequest);
 
 router.route("/:userId/refresh-token").post(refreshAccessToken);
 

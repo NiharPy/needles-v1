@@ -3,7 +3,7 @@ import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import UserModel from '../models/userschema.js';
 import nodemailer from 'nodemailer';
 import AltorderModel from '../models/AlterOrderSchema.js';
-import ChatModel from '../models/Chat.js';
+import AlterationRequest from '../models/AlterationRequest.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
 
@@ -450,149 +450,114 @@ const getUserAlterationOrders = async (req, res) => {
   }
 };
 
-
-const startChatSessionUser = async (req, res) => {
+// 📌 Submit Alteration Request
+export const submitAlterationRequest = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { userId, boutiqueId, altOrderId, alterationType, issueArea, fixType } = req.body;
 
-    // Find the user
+    // Ensure User Exists
     const user = await UserModel.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Initialize a new chat session
-    const chatSession = new ChatModel({
-      userId,
-      boutiqueId: null, // This will be set when a boutique joins the chat
-      sender: 'User',
-      message: 'Hello, I need some alterations.',
-      sessionActive: true,
-    });
-
-    await chatSession.save();
-    res.status(200).json({ message: 'Chat session started', chatSession });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error starting chat session', error: error.message });
-  }
-};
-
-// Start a new chat session for the boutique
-const startChatSessionBoutique = async (req, res) => {
-  try {
-    const { boutiqueId } = req.params;
-
-    // Find the boutique
+    // Ensure Boutique Exists
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
+    if (!boutique) return res.status(404).json({ message: "Boutique not found" });
 
-    // Find the user's chat session
-    const chatSession = await ChatModel.findOne({ boutiqueId: null, sessionActive: true });
-    if (!chatSession) return res.status(404).json({ message: 'No active chat session for this user' });
+    // Ensure referenceImage & orderImage files are uploaded
+    if (!req.files || !req.files.referenceImage || !req.files.orderImage) {
+      return res.status(400).json({ message: "Both reference image and order image are required" });
+    }
 
-    // Set the boutique's ID to the session
-    chatSession.boutiqueId = boutiqueId;
-    chatSession.message = 'Hello, how can I assist you with your alterations?';
-    await chatSession.save();
+    // Upload reference image & order image
+    const referenceImage = req.files.referenceImage[0].path;
+    const orderImage = req.files.orderImage[0].path;
 
-    res.status(200).json({ message: 'Chat session started with boutique', chatSession });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error starting chat session', error: error.message });
+    // Ensure AltvoiceNotes files are uploaded (Optional, but stores up to 5)
+    let AltvoiceNotes = [];
+    if (req.files?.AltvoiceNotes?.length > 0) {
+    const maxFiles = 5;
+    req.files.AltvoiceNotes.slice(0, maxFiles).forEach((file) => {
+    AltvoiceNotes.push(file.path); // Add each audio file's URL up to 5
+    });
   }
-};
 
-// Send a message from the user to the boutique
-const sendMessageUser = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { message, image, voiceNote } = req.body;
-
-    // Find the active chat session for the user
-    const chatSession = await ChatModel.findOne({ userId, sessionActive: true });
-    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
-
-    // Add the message from the user
-    const newMessage = new ChatModel({
+    // Create alteration request
+    const alterationRequest = await AlterationRequest.create({
       userId,
-      boutiqueId: chatSession.boutiqueId,
-      sender: 'User',
-      message,
-      image,
-      voiceNote,
-      sessionActive: true,
+      boutiqueId,
+      altOrderId,
+      alterationType,
+      issueArea,
+      fixType,
+      referenceImage,
+      orderImage,
+      voiceNote : AltvoiceNotes,
+      status: "Pending",
     });
 
-    await newMessage.save();
-    res.status(200).json({ message: 'Message sent to boutique', newMessage });
+    res.status(201).json({
+      message: "Alteration request submitted successfully",
+      alterationRequest,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error sending message', error: error.message });
+    console.error("Error submitting alteration request:", error);
+    res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
 
-// Send a message from the boutique to the user
-const sendMessageBoutique = async (req, res) => {
+
+
+
+// 📌 Boutique Reviews Request
+export const reviewAlterationRequest = async (req, res) => {
+  try {
+    const { altOrderId } = req.params;
+    const alterationRequest = await AlterationRequest.findOne({ altOrderId });
+
+    if (!alterationRequest) return res.status(404).json({ message: "Request not found" });
+
+    alterationRequest.status = "Reviewed";
+    await alterationRequest.save();
+
+    res.status(200).json({ message: "Request reviewed", alterationRequest });
+  } catch (error) {
+    res.status(500).json({ message: "Error reviewing request", error: error.message });
+  }
+};
+
+// 📌 Open Chat if Needed
+export const respondToAlterationRequest = async (req, res) => {
+  try {
+    const { altOrderId } = req.params;
+    const { responseMessage, responseStatus } = req.body; // Response message + status (Accepted, Needs Clarification, Rejected)
+
+    const alterationRequest = await AlterationRequest.findOne({ altOrderId });
+
+    if (!alterationRequest) return res.status(404).json({ message: "Request not found" });
+
+    alterationRequest.response = {
+      message: responseMessage,
+      status: responseStatus,
+      respondedAt: new Date(),
+    };
+    alterationRequest.status = responseStatus; // Update request status
+    await alterationRequest.save();
+
+    res.status(200).json({ message: "Response recorded", alterationRequest });
+  } catch (error) {
+    res.status(500).json({ message: "Error responding to request", error: error.message });
+  }
+};
+
+// 📌 Get All Alteration Requests for a Boutique
+export const getAlterationRequestsForBoutique = async (req, res) => {
   try {
     const { boutiqueId } = req.params;
-    const { message, image, voiceNote } = req.body;
+    const alterationRequests = await AlterationRequest.find({ boutiqueId });
 
-    // Find the active chat session for the boutique
-    const chatSession = await ChatModel.findOne({ boutiqueId, sessionActive: true });
-    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
-
-    // Add the message from the boutique
-    const newMessage = new ChatModel({
-      boutiqueId,
-      userId: chatSession.userId,
-      sender: 'Boutique',
-      message,
-      image,
-      voiceNote,
-      sessionActive: true,
-    });
-
-    await newMessage.save();
-    res.status(200).json({ message: 'Message sent to user', newMessage });
+    res.status(200).json({ message: "Alteration requests fetched", alterationRequests });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error sending message', error: error.message });
-  }
-};
-
-// Close the chat session when boutique says "Bye"
-const closeChatSession = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    // Find the active chat session for the user
-    const chatSession = await ChatModel.findOne({ userId, sessionActive: true });
-    if (!chatSession) return res.status(404).json({ message: 'No active chat session' });
-
-    // Close the chat session
-    chatSession.sessionActive = false;
-    await chatSession.save();
-
-    res.status(200).json({ message: 'Chat session closed' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error closing chat session', error: error.message });
-  }
-};
-
-// Get the chat session history for a user or boutique
-const getChatSessionHistory = async (req, res) => {
-  try {
-    const { userId, boutiqueId } = req.params;
-
-    const chatHistory = await ChatModel.find({
-      $or: [{ userId }, { boutiqueId }],
-      sessionActive: false, // Only retrieve closed sessions
-    });
-
-    res.status(200).json({ message: 'Chat history fetched', chatHistory });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error fetching chat history', error: error.message });
+    res.status(500).json({ message: "Error fetching requests", error: error.message });
   }
 };
 
@@ -760,8 +725,6 @@ const notifyBoutique = async (boutiqueId, orderId) => {
 };
 
 export {createBill, processPayment, getBill};
-
-export {startChatSessionUser, startChatSessionBoutique, sendMessageUser, sendMessageBoutique, closeChatSession, getChatSessionHistory};
 
 
 export {getUserAlterationOrders};

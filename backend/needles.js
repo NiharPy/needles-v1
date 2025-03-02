@@ -6,7 +6,6 @@ import UsersRouter from "./APIroutes/UsersRouter.js"
 import BoutiquesRouter from "./APIroutes/BoutiquesRouter.js"
 import { config } from './config/config.js';
 import http from 'http';  // Required for creating an HTTP server
-import { Server } from 'socket.io';  // Import socket.io
 
 //app config
 const app = express()
@@ -15,12 +14,6 @@ const port = 5000
 
 const server = http.createServer(app);
 
-// Initialize socket.io with the server
-const io = new Server(server);
-
-// Add socket event listener (to handle the chat functionality)
-import socketHandler from './sockets/socketHandler.js';  // Import socketHandler (this needs to be created)
-socketHandler(io);
 
 // middleware
 
