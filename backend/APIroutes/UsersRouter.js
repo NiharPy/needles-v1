@@ -1,15 +1,15 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
-import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest } from '../controllers/order-controller.js';
+import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
-import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages} from '../controllers/ODdelivery-controller.js';
+import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages, viewODDOrders, getODDOrderDetails} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation } from '../controllers/user-controller.js';
 import { getBill, processPayment } from '../controllers/order-controller.js';
-import { placeCAASOrder } from '../controllers/CAAS-controller.js';
+import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.js';
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -26,7 +26,9 @@ router.route("/search").get(authMiddleware,boutiqueSearch);
 
 router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
 
-router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(getDressTypeImages);
+router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
+
+router.route("/:userId/boutique/:boutiqueId/catalogue").get(authMiddleware,getBoutiqueCatalogue);
 
 router.route('/:userId/order/place').post(authMiddleware, upload.fields([
   { name: 'referralImage', maxCount: 1 },
@@ -35,8 +37,13 @@ router.route('/:userId/order/place').post(authMiddleware, upload.fields([
 
 router.route('/:userId/location').put(authMiddleware,updateUserLocation);
 
+router.route('/:userId/order').get(authMiddleware,viewOrders);
+
+router.route('/:userId/order/:orderId/cancel').delete(authMiddleware, cancelOrder);
 
 router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
+
+router.route('/:userId/order/:orderId/bill').get(authMiddleware,viewBill);
 
 router.route('/:userId/recommended').get(authMiddleware,getRecommendedBoutiques);
 
@@ -56,11 +63,12 @@ router.route('/:userId/alterations/:altOrderId/submit').post(authMiddleware, upl
 
 router.route("/:userId/refresh-token").post(refreshAccessToken);
 
-router.route("/:userId/order/:orderId/bill").get(authMiddleware,getBill);
-
 router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
 //odd
+router.route('/:userId/ODDorder').get(authMiddleware,viewODDOrders);
+
+router.route('/:userId/ODDorder/:orderId').get(authMiddleware, getODDOrderDetails);
 
 router.route("/:userId/odd/dresstypes").get(authMiddleware,getDressTypes);
 
@@ -79,6 +87,8 @@ router.route("/:userId/odd/order-placed").post(authMiddleware,placeODOrder);
 export default router;
 
 //CAAS
+
+router.route('/:userId/CAASorder').get(authMiddleware, viewCAASOrders);
 
 router.route("/:userId/CAAS/dresstypes").get(authMiddleware,getDressTypes);
 

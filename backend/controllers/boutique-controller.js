@@ -1,4 +1,5 @@
 import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
+import OrderModel from "../models/OrderSchema.js";
 import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
@@ -242,6 +243,32 @@ const addItemToCatalogue = async (req, res) => {
   }
 };
 
+const getBoutiqueCatalogue = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
+
+    // Find boutique by ID and exclude _id from catalogue items
+    const boutique = await BoutiqueModel.findById(boutiqueId).select("name catalogue -_id");
+
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    res.status(200).json({
+      message: "Catalogue retrieved successfully",
+      boutiqueName: boutique.name,
+      catalogue: boutique.catalogue.map(item => ({
+        itemName: item.itemName,
+        price: item.price
+      })),
+    });
+  } catch (error) {
+    console.error("Error retrieving boutique catalogue:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
 const deleteItemFromCatalogue = async (req, res) => {
   try {
     const { boutiqueId, itemNames } = req.body;
@@ -426,6 +453,52 @@ const getDressTypeImages = async (req, res) => {
   }
 };
 
+const trackBusiness = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
+
+    // Find the boutique
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ error: "Boutique not found" });
+    }
+
+    // Find all orders associated with the boutique that have a bill
+    const orders = await OrderModel.find({ boutiqueId, "bill.totalAmount": { $exists: true } });
+
+    if (!orders.length) {
+      return res.status(404).json({ message: "No billed orders found for this boutique." });
+    }
+
+    let totalRevenue = 0;
+    let totalOrders = orders.length;
+
+    // Calculate total revenue excluding platform and delivery fees
+    orders.forEach((order) => {
+      const bill = order.bill || {};
+      const amountFromBill = bill.totalAmount - (bill.platformFee || 0) - (bill.deliveryFee || 0);
+      totalRevenue += amountFromBill;
+    });
+
+    // Update the business tracker
+    boutique.businessTracker.totalOrders = totalOrders;
+    boutique.businessTracker.totalRevenue = totalRevenue;
+    await boutique.save();
+
+    res.json({
+      success: true,
+      message: "Business tracking updated successfully.",
+      businessTracker: boutique.businessTracker,
+    });
+  } catch (error) {
+    console.error("Error tracking business:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export {trackBusiness};
+
+
 
 export {getDressTypeImages};
 
@@ -445,4 +518,4 @@ export {boutiquesData};
 
 export {CreateBoutique};
 
-export {addItemToCatalogue};
+export {addItemToCatalogue, getBoutiqueCatalogue};

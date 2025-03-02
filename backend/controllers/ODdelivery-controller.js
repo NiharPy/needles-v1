@@ -397,6 +397,75 @@ const placeODOrder = async (req, res) => {
 };
 
 
+const viewODDOrders = async (req, res) => {
+  try {
+    const orders = await ODorderModel.find()
+      .populate("userId", "name address") // Populating user details
+      .select("_id userId dressType subType ODitems measurements location specialInstructions pickUp status createdAt");
+
+    if (!orders.length) {
+      return res.status(404).json({ message: "No ODD orders found." });
+    }
+
+    const formattedOrders = orders.map(order => ({
+      orderId: order._id,
+      userName: order.userId?.name || "Unknown",
+      userLocation: order.location || "Not Provided",
+      dressType: order.dressType || "Not Specified",
+      subType: order.subType || "None",
+      ODitems: order.ODitems,
+      measurements: order.measurements,
+      specialInstructions: order.specialInstructions || "None",
+      pickUp: order.pickUp,
+      status: order.status,
+      createdAt: order.createdAt,
+    }));
+
+    res.status(200).json({
+      message: "One-Day Delivery Orders retrieved successfully.",
+      orders: formattedOrders,
+    });
+
+  } catch (error) {
+    console.error("Error retrieving ODD orders:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+const getODDOrderDetails = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await ODorderModel.findById(orderId)
+      .populate("userId", "name phone address") // Populating user details
+      .select("_id userId dressType subType ODitems measurements specialInstructions pickUp status createdAt");
+
+    if (!order) {
+      return res.status(404).json({ message: "ODD Order not found" });
+    }
+
+    // Convert the order document to a plain object
+    let orderData = order.toObject();
+
+    // Remove measurements field if it's empty
+    if (!orderData.measurements || Object.keys(orderData.measurements).length === 0) {
+      delete orderData.measurements;
+    }
+
+    // Remove location field if it exists
+    delete orderData.location;
+
+    res.status(200).json({ order: orderData });
+
+  } catch (error) {
+    console.error("Error retrieving ODD order details:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
+
+
 
   
 const updateODDDeliveryStatus = async (req, res) => {
@@ -455,4 +524,4 @@ const updateODDDeliveryStatus = async (req, res) => {
   };
 
 
-  export {getDressTypes,getFrontImages, getBackImages, placeODOrder, updateODDDeliveryStatus, getSubDressTypes, getSleeveImages};
+  export {getDressTypes,getFrontImages, getBackImages, placeODOrder, updateODDDeliveryStatus, getSubDressTypes, getSleeveImages, viewODDOrders, getODDOrderDetails};

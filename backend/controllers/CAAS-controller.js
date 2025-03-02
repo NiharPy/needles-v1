@@ -151,6 +151,46 @@ const updateCAASDeliveryStatus = async (req, res) => {
     }
   };
 
+  const viewCAASOrders = async (req, res) => {
+    try {
+      const orders = await CAASorderModel.find()
+        .populate("userId", "name") // Populating user details
+        .select("_id userId CAASitems pickUp measurements location specialInstructions deliveryStatus createdAt");
+  
+      if (!orders.length) {
+        return res.status(404).json({ message: "No CAAS orders found." });
+      }
+  
+      const formattedOrders = orders.map(order => ({
+        orderId: order._id,
+        userName: order.userId?.name || "Unknown",
+        CAASitems: order.CAASitems.map(item => ({
+          serialCode: item.serialCode,
+          type: item.type,
+          fabric: item.fabric,
+          cuttingInstructions: item.cuttingInstructions,
+        })),
+        measurements: order.pickUp ? undefined : order.measurements,
+        location: order.location || "Not Provided",
+        specialInstructions: order.specialInstructions || "None",
+        pickUp: order.pickUp,
+        deliveryStatus: order.deliveryStatus,
+        createdAt: order.createdAt,
+      }));
+  
+      res.status(200).json({
+        message: "Cutting-As-A-Service Orders retrieved successfully.",
+        orders: formattedOrders,
+      });
+  
+    } catch (error) {
+      console.error("Error retrieving CAAS orders:", error);
+      res.status(500).json({ message: "Internal server error." });
+    }
+  };
+
+export {viewCAASOrders};
+
 export { updateCAASDeliveryStatus};
 
 export {placeCAASOrder};

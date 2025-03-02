@@ -6,6 +6,9 @@ import AltorderModel from '../models/AlterOrderSchema.js';
 import AlterationRequest from '../models/AlterationRequest.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
+import twilio from "twilio";
+
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
@@ -73,8 +76,8 @@ const placeOrder = async (req, res) => {
       });
     }
 
-    const User = await UserModel.findById(userId);
-    if (!User) {
+    const user = await UserModel.findById(userId);
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -120,15 +123,16 @@ const placeOrder = async (req, res) => {
 
     // Create new order
     const order = await OrderModel.create({
-      userId: User._id,
+      userId: user._id,
       boutiqueId: boutique._id,
       pickUp,
       dressType,
       measurements: pickUp ? undefined : measurements, // Only set measurements if pickUp is false
       referralImage,
-      location: User.address,
+      location: user.address,
       voiceNote: voiceNoteUrl,
       status: 'Pending',
+      createdAt: new Date(),
     }).catch(error => {
       console.error('Order creation error:', error); // Log the validation error
       if (error.errors) {
@@ -145,14 +149,17 @@ const placeOrder = async (req, res) => {
     });
     await boutique.save();
 
-    User.orders.push({
+    user.orders.push({
       orderId: order._id,
       status: 'Pending',
     });
-    await User.save();
+    await user.save();
+
+    // Schedule automatic cancellation if not accepted within 5 minutes
+    scheduleOrderCancellation(order._id, user.phone);
 
     res.status(201).json({
-      message: 'Order placed successfully',
+      message: 'Order placed successfully. Waiting for boutique response...',
       order,
     });
   } catch (error) {
@@ -161,14 +168,267 @@ const placeOrder = async (req, res) => {
   }
 };
 
+const cancelOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { userId } = req.body; // Assuming userId is provided in the request body
+
+    // Find the order
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Ensure the request is coming from the correct user
+    if (order.userId.toString() !== userId) {
+      return res.status(403).json({ message: "Unauthorized request" });
+    }
+
+    // Check if the order is already cancelled or completed
+    if (order.status === "Cancelled") {
+      return res.status(400).json({ message: "Order has already been cancelled" });
+    }
+    if (order.status === "Accepted" || order.status === "Completed") {
+      return res.status(400).json({ message: "Order cannot be cancelled after acceptance" });
+    }
+
+    // Check if the cancellation request is within 4 hours
+    const orderTime = new Date(order.createdAt);
+    const currentTime = new Date();
+    const timeDifference = (currentTime - orderTime) / (1000 * 60 * 60); // Convert to hours
+
+    if (timeDifference > 4) {
+      return res.status(400).json({ message: "Cancellation window expired. You can no longer cancel this order" });
+    }
+
+    // Update order status
+    order.status = "Cancelled";
+    await order.save();
+
+    // Remove the order from User's orders list
+    await UserModel.findByIdAndUpdate(order.userId, {
+      $pull: { orders: { orderId: order._id } },
+    });
+
+    // Remove the order from Boutique's orders list
+    await BoutiqueModel.findByIdAndUpdate(order.boutiqueId, {
+      $pull: { orders: { orderId: order._id } },
+    });
+
+    res.status(200).json({ message: "Order cancelled successfully", status: "Cancelled" });
+
+  } catch (error) {
+    console.error("Error cancelling order:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
 
 
-/**
- * @desc Update order status by the boutique
- * @route PATCH /order/:orderId/status
- * @access Private (Boutique only)
- */
+const acceptOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status, selectedItems, additionalCost } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ message: "Order ID is required" });
+    }
+
+    if (status !== "Accepted") {
+      return res.status(400).json({ message: 'Invalid request. Only "Accepted" status is allowed here.' });
+    }
+
+    // Find the order
+    const order = await OrderModel.findById(orderId)
+      .populate("userId", "name phone address")
+      .populate("boutiqueId", "name location catalogue orders");
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (!order.userId || !order.boutiqueId) {
+      return res.status(400).json({ message: "Order is missing required user or boutique details" });
+    }
+
+    const boutique = order.boutiqueId;
+    const user = order.userId;
+
+    if (!boutique.orders) boutique.orders = [];
+    if (!user.orders) user.orders = [];
+
+    // Prevent acceptance if bill is not created
+    if (!order.bill || !order.bill.totalAmount) {
+      return res.status(400).json({ message: "Bill must be created before accepting the order." });
+    }
+
+    // Update order status
+    order.status = "Accepted";
+    await order.save();
+
+    // Update boutique orders
+    const boutiqueOrder = boutique.orders?.find((o) => o.orderId?.toString() === orderId.toString());
+    if (boutiqueOrder) {
+      boutiqueOrder.status = "Accepted";
+      await boutique.save();
+    }
+
+    // Update user orders
+    const userOrder = user.orders?.find((o) => o.orderId?.toString() === orderId.toString());
+    if (userOrder) {
+      userOrder.status = "Accepted";
+      await user.save();
+    }
+
+    const userPhoneNumber = user.phone;
+    const userName = user.name;
+
+    // Send SMS notification
+    const smsText = `Hi ${userName}, your order has been accepted by ${order.boutiqueId.name}!🎉. Order ID: ${order._id}. Check Needles for details.`;
+
+    await client.messages.create({
+      body: smsText,
+      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
+      to: userPhoneNumber,
+    });
+
+    res.status(200).json({
+      message: "Order accepted successfully",
+      status: "Accepted",
+      bill: order.bill,
+    });
+  } catch (error) {
+    console.error("Error accepting order:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
+const scheduleOrderCancellation = async (orderId, userPhoneNumber) => {
+  setTimeout(async () => {
+    try {
+      const order = await OrderModel.findById(orderId);
+
+      if (order && order.status === 'Pending') { // If order is still pending
+        order.status = 'Cancelled';
+        await order.save();
+
+        const userPhoneNumber = user.phone;
+
+        // Send SMS to user
+        const smsText = `Your order was not accepted within 5 minutes. The boutique did not respond. Please try another boutique or after some time.`;
+        
+        await client.messages.create({
+          body: smsText,
+          from: process.env.TWILIO_MESSAGING_SERVICE_SID,
+          to: userPhoneNumber,
+        });
+
+        console.log(`Order ${orderId} cancelled due to no response.`);
+      }
+    } catch (error) {
+      console.error(`Error cancelling order ${orderId}:`, error);
+    }
+  }, 5 * 60 * 1000); // 5 minutes timeout
+};
+
+const declineOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (status !== 'Declined') {
+      return res.status(400).json({ message: 'Invalid request. Only "Declined" status is allowed here.' });
+    }
+
+    // Find the order
+    const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Check if boutique exists
+    if (!order.boutiqueId) {
+      return res.status(400).json({ message: 'Boutique not found in the order' });
+    }
+
+    const boutique = await BoutiqueModel.findById(order.boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
+    }
+
+    // Update order status to Declined
+    order.status = 'Declined';
+    await order.save();
+
+    // Update Boutique orders
+    const boutiqueOrder = boutique.orders.find((o) => o.orderId.toString() === orderId.toString());
+    if (boutiqueOrder) {
+      boutiqueOrder.status = 'Declined';
+      await boutique.save();
+    }
+
+    // Update User orders
+    const user = await UserModel.findById(order.userId);
+    const userOrder = user.orders.find((o) => o.orderId.toString() === orderId.toString());
+    if (userOrder) {
+      userOrder.status = 'Declined';
+      await user.save();
+    }
+
+    const userPhoneNumber = user.phone;
+
+    // Send SMS notification
+    const smsText = `Your order has been declined by ${order.boutiqueId.name}. Order ID: ${order._id}. Please open Needles for details.`;
+    
+    await client.messages.create({
+      body: smsText,
+      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
+      to: userPhoneNumber, // Ensure phoneNumber is stored in the User schema
+    });
+
+    res.status(200).json({
+      message: 'Order declined successfully, and SMS notification sent',
+      status: 'Declined',
+    });
+  } catch (error) {
+    console.error('Error declining order:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const viewOrders = async (req, res) => {
+  try {
+    const { userId } = req.params; // Get the user ID from request parameters
+
+    // Find all orders where status is "Paid"
+    const paidOrders = await OrderModel.find({ userId, status: "Paid" })
+      .populate("boutiqueId", "name") // Fetch boutique name
+      .select("referralImage _id boutiqueId bill.totalAmount status") // Select necessary fields
+
+    if (!paidOrders.length) {
+      return res.status(404).json({ message: "No paid orders found" });
+    }
+
+    // Format the response
+    const formattedOrders = paidOrders.map(order => ({
+      orderId: order._id,
+      boutiqueName: order.boutiqueId.name,
+      amount: order.bill.totalAmount,
+      status: order.status,
+      referralImage: order.referralImage
+    }));
+
+    res.status(200).json({
+      message: "Paid orders retrieved successfully",
+      orders: formattedOrders
+    });
+
+  } catch (error) {
+    console.error("Error fetching paid orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
 
 const updateOrderStatus = async (req, res) => {
@@ -176,15 +436,8 @@ const updateOrderStatus = async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    const validStatuses = [
-      'Pending', 
-      'Accepted', 
-      'Declined', 
-      'In Progress', 
-      'Ready for Delivery', 
-      'Completed'
-    ];
-    
+    const validStatuses = ['Pending', 'In Progress', 'Ready for Delivery'];
+
     // Validate status
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
@@ -210,14 +463,14 @@ const updateOrderStatus = async (req, res) => {
     order.status = status;
     await order.save();
 
-    // Update status in Boutique's orders
+    // Update Boutique orders
     const boutiqueOrder = boutique.orders.find((o) => o.orderId.toString() === orderId.toString());
     if (boutiqueOrder) {
       boutiqueOrder.status = status;
       await boutique.save();
     }
 
-    // Update status in User's orders
+    // Update User orders
     const user = await UserModel.findById(order.userId);
     const userOrder = user.orders.find((o) => o.orderId.toString() === orderId.toString());
     if (userOrder) {
@@ -225,21 +478,7 @@ const updateOrderStatus = async (req, res) => {
       await user.save();
     }
 
-    // Handle notifications for specific statuses
-    if (order.pickUp && status === 'Accepted') {
-      const userLocation = order.userId.address;
-      const boutiqueLocation = order.boutiqueId.location;
-      const orderID = order._id;
-
-      const emailText = `
-        A User has requested a pick-up:
-        - User Location: ${userLocation}
-        - Boutique Location: ${boutiqueLocation}
-        - Order Id : ${orderID}
-      `;
-      await sendEmailToAdmin('Pick-Up Request', emailText);
-    }
-
+    // Handle notification for "Ready for Delivery"
     if (status === 'Ready for Delivery') {
       const userLocation = order.userId.address;
       const boutiqueLocation = order.boutiqueId.location;
@@ -254,7 +493,6 @@ const updateOrderStatus = async (req, res) => {
       await sendEmailToAdmin('Ready for Delivery', emailText);
     }
 
-    // Send response
     res.status(200).json({
       message: 'Order status updated successfully',
       status,
@@ -264,6 +502,7 @@ const updateOrderStatus = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 /**
@@ -724,6 +963,47 @@ const notifyBoutique = async (boutiqueId, orderId) => {
   }
 };
 
+const viewBill = async (req, res) => {
+  try {
+    const { orderId } = req.params; // Get the order ID from request parameters
+
+    // Find the order and populate boutique details
+    const order = await OrderModel.findById(orderId)
+      .populate("boutiqueId", "name")
+      .select("bill _id boutiqueId status");
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (!order.bill || !order.bill.totalAmount) {
+      return res.status(400).json({ message: "Bill not available for this order" });
+    }
+
+    // Format the bill details
+    const billDetails = {
+      orderId: order._id,
+      boutiqueName: order.boutiqueId.name,
+      items: order.bill.items,
+      platformFee: order.bill.platformFee,
+      deliveryFee: order.bill.deliveryFee,
+      additionalCost: order.bill.additionalCost,
+      totalAmount: order.bill.totalAmount,
+      status: order.status,
+    };
+
+    res.status(200).json({
+      message: "Bill retrieved successfully",
+      bill: billDetails,
+    });
+
+  } catch (error) {
+    console.error("Error fetching bill:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
 export {createBill, processPayment, getBill};
 
 
@@ -739,4 +1019,4 @@ export { rateOrder };
 
 export {getOrderDetails};
 export {placeOrder};
-export {updateOrderStatus};
+export {updateOrderStatus, acceptOrder, declineOrder, viewOrders, viewBill, cancelOrder};
