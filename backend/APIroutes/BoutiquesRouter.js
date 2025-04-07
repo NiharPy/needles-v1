@@ -1,7 +1,7 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypez} from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-user.js';
-import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder} from '../controllers/order-controller.js';
+import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder, getBoutiqueOrders, getCompletedOrders} from '../controllers/order-controller.js';
 
 import {createBill} from '../controllers/order-controller.js';
 
@@ -17,6 +17,10 @@ router.route("/search").get(boutiqueSearch);
 
 router.route('/:boutiqueId/track').get(authMiddleware, trackBusiness);
 
+router.route('/:boutiqueId/order').get(authMiddleware,getBoutiqueOrders);
+
+router.route('/:boutiqueId/order-completed').get(authMiddleware,getCompletedOrders);
+
 router.route('/:boutiqueId/order/:orderId/status').post(authMiddleware,updateOrderStatus);
 
 router.route('/:boutiqueId/order/:orderId').get(authMiddleware,getOrderDetails);
@@ -26,6 +30,8 @@ router.route("/:boutiqueId/order/:orderId/accept").post(authMiddleware, acceptOr
 router.route("/:boutiqueId/order/:orderId/decline").post(authMiddleware, declineOrder);
 
 router.route("/:boutiqueId/catalogue").get(getBoutiqueCatalogue);
+
+router.route("/:boutiqueId/dresstypes").get(getDressTypez);
 
 router.route("/:boutiqueId/add-catalogue-item").post(addItemToCatalogue);
 

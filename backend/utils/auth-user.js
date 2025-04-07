@@ -1,16 +1,23 @@
 import jwt from 'jsonwebtoken';
 import UserModel from "../models/userschema.js";
+import BlacklistedToken from '../models/BlacklistedToken.js';
 
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
-    // Check if the token exists
+    // Check if the token exists and starts with "Bearer "
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ message: "Access token missing or invalid." });
     }
 
     const token = authHeader.split(" ")[1]; // Extract token after 'Bearer '
+
+    // Check if token is blacklisted
+    const blacklisted = await BlacklistedToken.findOne({ token });
+    if (blacklisted) {
+      return res.status(401).json({ message: "Unauthorized: Token has been invalidated." });
+    }
 
     // Verify the access token
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {

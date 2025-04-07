@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue, getDressTypez} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -7,7 +7,7 @@ import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages, viewODDOrders, getODDOrderDetails} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
-import { updateUserLocation } from '../controllers/user-controller.js';
+import { updateUserLocation, UserLogout } from '../controllers/user-controller.js';
 import { getBill, processPayment } from '../controllers/order-controller.js';
 import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.js';
 const router = express.Router();
@@ -22,9 +22,13 @@ router.route("/login").post(Userlogin);
 
 router.route("/verify-otp").post(verifyOtp);
 
+router.route("/:userId/logout").post(authMiddleware,UserLogout);
+
 router.route("/search").get(authMiddleware,boutiqueSearch);
 
 router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
+
+router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypez);
 
 router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
 

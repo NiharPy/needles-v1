@@ -496,11 +496,31 @@ const trackBusiness = async (req, res) => {
   }
 };
 
+const getDressTypez = async (req, res) => {
+  const { boutiqueId } = req.params;
+
+  try {
+    // Find the boutique by ID
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
+    }
+
+    // Extract and return dress types
+    const dressTypes = boutique.dressTypes.map((item) => item.type);
+
+    res.status(200).json({ dressTypes });
+  } catch (error) {
+    console.error('Error fetching dress types:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 export {trackBusiness};
 
 
 
-export {getDressTypeImages};
+export {getDressTypeImages, getDressTypez};
 
 export {addDressType};
 

@@ -52,47 +52,43 @@ const placeOrder = async (req, res) => {
     if (typeof rawMeasurements === "string") {
       const sanitizedMeasurements = rawMeasurements.trim();
       try {
-        measurements = JSON.parse(sanitizedMeasurements); // Parse the sanitized string
+        measurements = JSON.parse(sanitizedMeasurements);
       } catch (error) {
         return res.status(400).json({
           message: "Invalid format for measurements. Please provide a valid JSON object.",
         });
       }
     } else {
-      measurements = rawMeasurements; // Use as-is if it's already an object
+      measurements = rawMeasurements;
     }
 
     // Ensure referralImage file is uploaded
     if (!req.files || !req.files.referralImage) {
-      return res.status(400).json({ message: 'Referral image is required' });
+      return res.status(400).json({ message: "Referral image is required" });
     }
+    const referralImage = req.files.referralImage[0].path;
 
-    // Ensure voiceNotes file is uploaded
+    // Handle voice notes
     let voiceNoteUrl = [];
-    if (req.files && req.files.voiceNotes && req.files.voiceNotes.length > 0) {
-      const maxFiles = 5;
-      req.files.voiceNotes.slice(0, maxFiles).forEach((file) => {
-        voiceNoteUrl.push(file.path); // Add each audio file's URL up to 5
-      });
+    if (Array.isArray(req.files.voiceNotes)) {
+      voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path);
     }
 
     const user = await UserModel.findById(userId);
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
-      return res.status(404).json({ message: 'Boutique not found' });
+      return res.status(404).json({ message: "Boutique not found" });
     }
 
     const dressTypeData = boutique.dressTypes.find(
       (type) => type.type === dressType
     );
     if (!dressTypeData) {
-      return res
-        .status(400)
-        .json({ message: `Invalid dress type: ${dressType} for this boutique` });
+      return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
     // Validate measurements if pickUp is false
@@ -111,15 +107,10 @@ const placeOrder = async (req, res) => {
 
       if (!isValidMeasurements) {
         return res.status(400).json({
-          message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(
-            ', '
-          )}`,
+          message: `Invalid measurements for ${dressType}. Required fields: ${requiredMeasurements.join(", ")}`,
         });
       }
     }
-
-    // Upload referral image to Cloudinary
-    const referralImage = req.files.referralImage[0].path;
 
     // Create new order
     const order = await OrderModel.create({
@@ -127,14 +118,14 @@ const placeOrder = async (req, res) => {
       boutiqueId: boutique._id,
       pickUp,
       dressType,
-      measurements: pickUp ? undefined : measurements, // Only set measurements if pickUp is false
+      measurements: pickUp ? undefined : measurements,
       referralImage,
       location: user.address,
       voiceNote: voiceNoteUrl,
-      status: 'Pending',
+      status: "Pending",
       createdAt: new Date(),
-    }).catch(error => {
-      console.error('Order creation error:', error); // Log the validation error
+    }).catch((error) => {
+      console.error("Order creation error:", error);
       if (error.errors) {
         Object.keys(error.errors).forEach((key) => {
           console.error(`Validation failed on ${key}: ${error.errors[key].message}`);
@@ -143,30 +134,27 @@ const placeOrder = async (req, res) => {
       throw error;
     });
 
-    boutique.orders.push({
-      orderId: order._id,
-      status: 'Pending',
-    });
+    boutique.orders.push({ orderId: order._id, status: "Pending" });
     await boutique.save();
 
-    user.orders.push({
-      orderId: order._id,
-      status: 'Pending',
-    });
+    user.orders.push({ orderId: order._id, status: "Pending" });
     await user.save();
 
     // Schedule automatic cancellation if not accepted within 5 minutes
-    scheduleOrderCancellation(order._id, user.phone);
+    if (typeof scheduleOrderCancellation === "function") {
+      scheduleOrderCancellation(order._id, user.phone);
+    }
 
     res.status(201).json({
-      message: 'Order placed successfully. Waiting for boutique response...',
+      message: "Order placed successfully. Waiting for boutique response...",
       order,
     });
   } catch (error) {
-    console.error('Error placing order:', error);
-    res.status(500).json({ message: 'Server error', error: error.message || error });
+    console.error("Error placing order:", error);
+    res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
+
 
 const cancelOrder = async (req, res) => {
   try {
@@ -304,33 +292,61 @@ const acceptOrder = async (req, res) => {
 };
 
 
-const scheduleOrderCancellation = async (orderId, userPhoneNumber) => {
+const scheduleOrderCancellation = async (orderId) => {
   setTimeout(async () => {
     try {
-      const order = await OrderModel.findById(orderId);
+      const order = await OrderModel.findById(orderId)
+        .populate("userId", "orders phone")
+        .populate("boutiqueId", "orders");
 
-      if (order && order.status === 'Pending') { // If order is still pending
-        order.status = 'Cancelled';
-        await order.save();
+      if (!order) {
+        console.log(`Order ${orderId} already deleted or does not exist.`);
+        return;
+      }
 
-        const userPhoneNumber = user.phone;
+      if (order.status !== "Pending") {
+        console.log(`Order ${orderId} is no longer pending. No action taken.`);
+        return;
+      }
 
-        // Send SMS to user
-        const smsText = `Your order was not accepted within 5 minutes. The boutique did not respond. Please try another boutique or after some time.`;
-        
+      const user = order.userId;
+      const boutique = order.boutiqueId;
+
+      // Remove order from boutique's orders array
+      if (boutique && boutique.orders) {
+        boutique.orders = boutique.orders.filter(
+          (o) => o.orderId.toString() !== orderId.toString()
+        );
+        await boutique.save();
+      }
+
+      // Remove order from user's orders array
+      if (user && user.orders) {
+        user.orders = user.orders.filter(
+          (o) => o.orderId.toString() !== orderId.toString()
+        );
+        await user.save();
+      }
+
+      // Delete the order from the database
+      await OrderModel.findByIdAndDelete(orderId);
+      console.log(`Order ${orderId} deleted due to no response.`);
+
+      // Send SMS to user
+      if (user && user.phone) {
+        const smsText = `Your order was not accepted within 5 minutes and has been cancelled automatically. Please try another boutique.`;
         await client.messages.create({
           body: smsText,
           from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-          to: userPhoneNumber,
+          to: user.phone,
         });
-
-        console.log(`Order ${orderId} cancelled due to no response.`);
       }
     } catch (error) {
-      console.error(`Error cancelling order ${orderId}:`, error);
+      console.error(`Error deleting order ${orderId}:`, error);
     }
-  }, 5 * 60 * 1000); // 5 minutes timeout
+  }, 5 * 60 * 1000); // 5-minute timeout
 };
+
 
 const declineOrder = async (req, res) => {
   try {
@@ -702,6 +718,12 @@ export const submitAlterationRequest = async (req, res) => {
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: "Boutique not found" });
 
+    // Check if the order already has two alteration requests
+    const existingAltOrders = await AlterationRequest.countDocuments({ altOrderId });
+    if (existingAltOrders >= 2) {
+      return res.status(400).json({ message: "Maximum of 2 alteration requests allowed per order" });
+    }
+
     // Ensure referenceImage & orderImage files are uploaded
     if (!req.files || !req.files.referenceImage || !req.files.orderImage) {
       return res.status(400).json({ message: "Both reference image and order image are required" });
@@ -714,11 +736,11 @@ export const submitAlterationRequest = async (req, res) => {
     // Ensure AltvoiceNotes files are uploaded (Optional, but stores up to 5)
     let AltvoiceNotes = [];
     if (req.files?.AltvoiceNotes?.length > 0) {
-    const maxFiles = 5;
-    req.files.AltvoiceNotes.slice(0, maxFiles).forEach((file) => {
-    AltvoiceNotes.push(file.path); // Add each audio file's URL up to 5
-    });
-  }
+      const maxFiles = 5;
+      req.files.AltvoiceNotes.slice(0, maxFiles).forEach((file) => {
+        AltvoiceNotes.push(file.path);
+      });
+    }
 
     // Create alteration request
     const alterationRequest = await AlterationRequest.create({
@@ -730,7 +752,7 @@ export const submitAlterationRequest = async (req, res) => {
       fixType,
       referenceImage,
       orderImage,
-      voiceNote : AltvoiceNotes,
+      voiceNote: AltvoiceNotes,
       status: "Pending",
     });
 
@@ -743,7 +765,6 @@ export const submitAlterationRequest = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
-
 
 
 
@@ -1003,14 +1024,80 @@ const viewBill = async (req, res) => {
   }
 };
 
+const getBoutiqueOrders = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
 
-export {createBill, processPayment, getBill};
+    // Find boutique and populate orders
+    const boutique = await BoutiqueModel.findById(boutiqueId).populate({
+      path: "orders.orderId",
+      model: "order", // Ensure correct model reference
+      populate: {
+        path: "userId",
+        select: "name",
+      },
+    });
+
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    // Filter orders: Only include orders that exist and have "Pending" status
+    const orders = boutique.orders
+      .filter(({ orderId }) => orderId && orderId.status === "Pending") // Ensure orderId exists and status is "Pending"
+      .map(({ orderId }) => ({
+        orderId: orderId._id || null,
+        userName: orderId.userId?.name || "Unknown User", // Handle missing user data
+        dressType: orderId.dressType || "Unknown",
+        measurements: orderId.measurements ? Object.fromEntries(orderId.measurements) : null, // Convert Map to Object
+        pickUp: orderId.pickUp || false,
+        referralImage: orderId.referralImage || null,
+        voiceNote: orderId.voiceNote?.length ? orderId.voiceNote : null,
+        location: orderId.location || "Unknown",
+        alterations: orderId.alterations || false,
+        status: orderId.status || "Pending",
+        totalAmount: orderId.totalAmount || 0,
+        bill: orderId.bill || {}, // Ensure bill exists
+        createdAt: orderId.createdAt || new Date(),
+      }));
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    console.error("Error fetching boutique orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message || error });
+  }
+};
+
+const getCompletedOrders = async (req, res) => {
+  try {
+    const completedOrders = await OrderModel.find({ status: "Completed" })
+      .populate("userId", "name email phone") // Populate user details
+      .populate("boutiqueId", "name location") // Populate boutique details
+      .sort({ updatedAt: -1 }); // Sort by latest completed orders
+
+    if (completedOrders.length === 0) {
+      return res.status(404).json({ message: "No completed orders found." });
+    }
+
+    res.status(200).json({ message: "Completed orders fetched successfully", orders: completedOrders });
+  } catch (error) {
+    console.error("Error fetching completed orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message || error });
+  }
+};
+
+
+
+
+
+
+export {createBill, processPayment, getBill, getCompletedOrders};
 
 
 export {getUserAlterationOrders};
 
 
-export {requestAlteration};
+export {requestAlteration, getBoutiqueOrders};
 
 export default sendEmailToAdmin;
 

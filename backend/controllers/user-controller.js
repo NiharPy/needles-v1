@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 import axios from 'axios';
 import mongoose from "mongoose";
+import BlacklistedToken from '../models/BlacklistedToken.js';
 
 const OTP_EXPIRATION_TIME = 5
 
@@ -221,9 +222,32 @@ const verifyOtp = async (req, res) => {
     }
   };
   
+
+  const UserLogout = async function (req, res) {
+    try {
+      const token = req.headers.authorization?.split(" ")[1]; // Extract token from header
+  
+      if (!token) {
+        return res.status(400).json({ message: "No token provided." });
+      }
+  
+      const decoded = jwt.decode(token); // Decode token to get expiration time
+  
+      // Save token to blacklist
+      await BlacklistedToken.create({
+        token,
+        expiresAt: new Date(decoded.exp * 1000), // JWT expiry time
+      });
+  
+      res.status(200).json({ message: "Logged out successfully." });
+    } catch (error) {
+      console.error("Error during logout:", error);
+      res.status(500).json({ message: "An error occurred during logout." });
+    }
+  };
   
 
 export { updateUserLocation };
   
-export { registerUser, verifyOtp, Userlogin };
+export { registerUser, verifyOtp, Userlogin, UserLogout };
   
