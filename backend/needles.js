@@ -9,7 +9,11 @@ import http from 'http';  // Required for creating an HTTP server
 
 //app config
 const app = express()
+<<<<<<< HEAD
 const port = process.env.PORT || 14000
+=======
+const port = 14000
+>>>>>>> 0dc2942 (changes)
 
 
 const server = http.createServer(app);
