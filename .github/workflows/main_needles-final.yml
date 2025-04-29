@@ -23,6 +23,12 @@ jobs:
         with:
           node-version: '22.x'
 
+      - name: npm install, build, and test
+        run: |
+          npm install
+          npm run build --if-present
+          npm run test --if-present
+
       - name: Zip artifact for deployment
         run: zip release.zip ./* -r
 
@@ -31,13 +37,6 @@ jobs:
         with:
           name: node-app
           path: release.zip
-      - name: Install dependencies
-        run: npm install
-        working-directory: needles-v1/backend
-
-      - name: Build backend (optional)
-        run: npm run build
-        working-directory: needles-v1/backend
 
   deploy:
     runs-on: ubuntu-latest
@@ -61,9 +60,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_09A34B2A4CE04136A0C4930E709C720F }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5F2D2338486F4A518B9FC52D3110A17F }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_002D04D138B646F38699915E613FCAA7 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_136580F76BBE4FDDBB8BE03380709CCC }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D60C327E8EEE41E2AB4F5276CD516AD7 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_AE789533588E4996A4737CC77DE92FFC }}
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
