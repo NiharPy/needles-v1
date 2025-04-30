@@ -13,7 +13,7 @@ import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.j
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
-    res.send("Welcome to the Home page!");
+    res.send("Welcome to the Home page!")
 });
 
 router.route("/signup").post(registerUser);
