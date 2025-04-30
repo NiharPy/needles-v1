@@ -4,8 +4,7 @@
   "main": "needles.js",
   "type": "module",
   "scripts": {
-    "start:dev": "cross-env NODE_ENV=development nodemon needles.js",
-    "start:prod": "cross-env NODE_ENV=production node needles.js"
+    "start": "node needles.js"
   },
   "keywords": [],
   "author": "",
