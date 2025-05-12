@@ -7,6 +7,11 @@ import AlterationRequest from '../models/AlterationRequest.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import twilio from "twilio";
+import fs from 'fs';
+import path from 'path';
+import { createWriteStream, unlinkSync } from 'fs';
+import PDFDocument from 'pdfkit';
+import { v2 as cloudinary } from 'cloudinary';
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -63,15 +68,17 @@ const placeOrder = async (req, res) => {
     }
 
     // Ensure referralImage file is uploaded
-    if (!req.files || !req.files.referralImage) {
+    if (!req.files || !req.files.referralImage || !req.files.referralImage[0]) {
       return res.status(400).json({ message: "Referral image is required" });
     }
+
+    // Cloudinary URL
     const referralImage = req.files.referralImage[0].path;
 
-    // Handle voice notes
+    // Handle voice notes (Cloudinary URLs)
     let voiceNoteUrl = [];
     if (Array.isArray(req.files.voiceNotes)) {
-      voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path);
+      voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path); // Cloudinary gives file.path as URL
     }
 
     const user = await UserModel.findById(userId);
@@ -216,81 +223,75 @@ const cancelOrder = async (req, res) => {
 const acceptOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { status, selectedItems, additionalCost } = req.body;
 
     if (!orderId) {
       return res.status(400).json({ message: "Order ID is required" });
     }
 
-    if (status !== "Accepted") {
-      return res.status(400).json({ message: 'Invalid request. Only "Accepted" status is allowed here.' });
-    }
-
-    // Find the order
+    // Find the order and populate user and boutique details
     const order = await OrderModel.findById(orderId)
-      .populate("userId", "name phone address")
-      .populate("boutiqueId", "name location catalogue orders");
+      .populate("userId", "name phone address orders")
+      .populate("boutiqueId", "name location orders");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    if (!order.userId || !order.boutiqueId) {
-      return res.status(400).json({ message: "Order is missing required user or boutique details" });
-    }
-
     const boutique = order.boutiqueId;
     const user = order.userId;
 
+    // Debugging: log the boutique and user objects
+    console.log("Boutique:", boutique);
+    console.log("User:", user);
+
+    if (!boutique || !user) {
+      return res.status(400).json({ message: "Order is missing required user or boutique details" });
+    }
+
+    // Initialize orders array if it's missing or undefined
     if (!boutique.orders) boutique.orders = [];
     if (!user.orders) user.orders = [];
 
-    // Prevent acceptance if bill is not created
-    if (!order.bill || !order.bill.totalAmount) {
-      return res.status(400).json({ message: "Bill must be created before accepting the order." });
-    }
-
-    // Update order status
+    // Change order status to "Accepted"
     order.status = "Accepted";
     await order.save();
 
-    // Update boutique orders
-    const boutiqueOrder = boutique.orders?.find((o) => o.orderId?.toString() === orderId.toString());
+    // Update status in boutique orders
+    const boutiqueOrder = boutique.orders.find(o => o.orderId && o.orderId.toString() === orderId);
     if (boutiqueOrder) {
       boutiqueOrder.status = "Accepted";
       await boutique.save();
+    } else {
+      console.error("No matching orderId found in boutique orders");
     }
 
-    // Update user orders
-    const userOrder = user.orders?.find((o) => o.orderId?.toString() === orderId.toString());
+    // Update status in user orders
+    const userOrder = user.orders.find(o => o.orderId && o.orderId.toString() === orderId);
     if (userOrder) {
       userOrder.status = "Accepted";
       await user.save();
+    } else {
+      console.error("No matching orderId found in user orders");
     }
 
-    const userPhoneNumber = user.phone;
-    const userName = user.name;
-
-    // Send SMS notification
-    const smsText = `Hi ${userName}, your order has been accepted by ${order.boutiqueId.name}!🎉. Order ID: ${order._id}. Check Needles for details.`;
+    // Send SMS to user
+    const smsText = `Hi ${user.name}, your order has been accepted by ${boutique.name}!🎉 Order ID: ${order._id}. Check Needles for details.`;
 
     await client.messages.create({
       body: smsText,
       from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      to: userPhoneNumber,
+      to: user.phone,
     });
 
     res.status(200).json({
-      message: "Order accepted successfully",
+      message: "Order status updated to 'Accepted' successfully",
       status: "Accepted",
-      bill: order.bill,
     });
   } catch (error) {
     console.error("Error accepting order:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 
 const scheduleOrderCancellation = async (orderId) => {
   setTimeout(async () => {
@@ -833,14 +834,15 @@ const createBill = async (req, res) => {
       return res.status(404).json({ error: "Boutique or Order not found" });
     }
 
+    // Update order status if not already accepted
     if (order.status !== "Accepted") {
-      return res.status(400).json({ error: "The order must be accepted before creating a bill" });
+      order.status = "Accepted";
     }
 
     let totalAmount = 0;
     let billDetails = {};
 
-    // Calculate total from selected items
+    // Calculate item total
     selectedItems.forEach(({ item, quantity }) => {
       const catalogItem = boutique.catalogue.find((c) => c.itemName.includes(item));
       if (catalogItem) {
@@ -850,57 +852,98 @@ const createBill = async (req, res) => {
       }
     });
 
-    // Platform fee (2%)
+    // Platform fee
     const platformFee = totalAmount * 0.02;
     totalAmount += platformFee;
 
-    // Delivery Fee
+    // Delivery fee
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
     const deliveryFee = calculateDeliveryFee(distance);
     totalAmount += deliveryFee;
 
-    // Handle additional cost
+    // Additional cost (allow 0)
     let additionalCostValue = 0;
     let additionalCostReason = "Not specified";
 
-    if (additionalCost && typeof additionalCost === "object" && additionalCost.amount) {
+    if (
+      additionalCost &&
+      typeof additionalCost === "object" &&
+      additionalCost.amount !== undefined
+    ) {
       additionalCostValue = parseFloat(additionalCost.amount);
-      additionalCostReason = additionalCost.reason || "Not specified";
+      if (!isNaN(additionalCostValue) && additionalCostValue >= 0) {
+        additionalCostReason = additionalCost.reason || "Not specified";
+        totalAmount += additionalCostValue;
+      } else {
+        additionalCostValue = 0;
+      }
     }
 
-    if (isNaN(additionalCostValue) || additionalCostValue < 0) {
-      additionalCostValue = 0;
-    }
+    // GST (12%)
+    const gst = totalAmount * 0.12;
+    totalAmount += gst;
 
-    totalAmount += additionalCostValue;
+    // Debug logs
+    console.log("Bill Details:", billDetails);
+    console.log("Platform Fee:", platformFee);
+    console.log("Delivery Fee:", deliveryFee);
+    console.log("Additional Cost:", additionalCostValue);
+    console.log("Additional Cost Reason:", additionalCostReason);
+    console.log("GST:", gst);
+    console.log("Final Total:", totalAmount);
 
-    // Update order bill
+    // Update order.bill
     order.bill = {
       items: billDetails,
       platformFee,
       deliveryFee,
       additionalCost: {
         amount: additionalCostValue,
-        reason: additionalCostReason
+        reason: additionalCostReason,
       },
+      gst,
       totalAmount,
-      status: "Pending"
+      status: "Pending",
     };
 
-    // Ensure Mongoose tracks changes
     order.markModified("bill");
     order.totalAmount = totalAmount;
     await order.save();
 
-    res.json({ success: true, bill: order.bill });
+    // SMS to user
+    const smsText = `Hi ${order.userId.name}, your order has been successfully accepted and a bill has been created.🎉 Order ID: ${order._id}. Total Amount: ₹${totalAmount.toFixed(2)}. Check Needles for details.`;
+
+    await client.messages.create({
+      body: smsText,
+      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
+      to: order.userId.phone,
+    });
+
+    // Send bill in response
+    res.status(200).json({
+      message: "Bill created successfully",
+      bill: {
+        items: billDetails,
+        platformFee,
+        deliveryFee,
+        additionalCost: {
+          amount: additionalCostValue,
+          reason: additionalCostReason,
+        },
+        gst,
+        totalAmount,
+        status: "Pending",
+      },
+      orderId: order._id,
+      status: order.status,
+    });
   } catch (error) {
     console.error("Error creating bill:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 
 
 
@@ -920,6 +963,7 @@ const getDistance = async (userLocation, boutiqueLocation) => {
 const calculateDeliveryFee = (distance) => {
   return distance * 10; // ₹10 per KM
 };
+
 
 // Get Bill for User
 const getBill = async (req, res) => {
@@ -984,6 +1028,13 @@ const notifyBoutique = async (boutiqueId, orderId) => {
   }
 };
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
 const viewBill = async (req, res) => {
   try {
     const { orderId } = req.params; // Get the order ID from request parameters
@@ -1020,6 +1071,85 @@ const viewBill = async (req, res) => {
 
   } catch (error) {
     console.error("Error fetching bill:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const generateInvoice = async (req, res) => {
+  try {
+    const { boutiqueId, orderId } = req.params; // Get boutiqueId and orderId from request parameters
+
+    // Find the order and populate boutique details
+    const order = await OrderModel.findById(orderId)
+      .populate("boutiqueId", "name")
+      .select("bill _id boutiqueId status customerName");
+
+    // Check if the order exists
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Check if the bill exists and has a total amount
+    if (!order.bill || !order.bill.totalAmount) {
+      return res.status(400).json({ message: "Bill not available for this order" });
+    }
+
+    // Create a PDF document
+    const filename = `invoice-${order._id}.pdf`;
+    const filepath = `./tmp/${filename}`;
+
+    // Ensure the directory exists
+    if (!fs.existsSync('./tmp')) {
+      fs.mkdirSync('./tmp');
+    }
+
+    const doc = new PDFDocument();
+    doc.pipe(createWriteStream(filepath));
+
+    // Set up the invoice content
+    doc.fontSize(18).text("Tax Invoice", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(10).text(`Order ID: ${order._id}`);
+    doc.text(`Boutique: ${order.boutiqueId.name}`);
+    doc.text(`Customer: ${order.customerName}`);
+    doc.text(`Status: ${order.status}`);
+    doc.moveDown();
+
+    doc.text("Items:");
+    order.bill.items.forEach((item) => {
+      doc.text(`${item.name}: ₹${item.amount}`);
+    });
+
+    doc.text(`Platform Fee: ₹${order.bill.platformFee}`);
+    doc.text(`Delivery Fee: ₹${order.bill.deliveryFee}`);
+    doc.text(`Additional Cost: ₹${order.bill.additionalCost}`);
+    doc.text(`Total Amount: ₹${order.bill.totalAmount}`);
+
+    // Finalize the PDF document
+    doc.end();
+
+    await new Promise((resolve) => doc.on('finish', resolve));
+
+    // Upload the PDF to Cloudinary
+    const result = await cloudinary.uploader.upload(filepath, {
+      resource_type: 'raw',
+      folder: 'invoices',
+      use_filename: true,
+      unique_filename: false,
+      overwrite: true,
+    });
+
+    // Clean up local file
+    unlinkSync(filepath);
+
+    // Respond with the Cloudinary URL
+    res.status(200).json({
+      message: "Invoice generated successfully",
+      invoiceUrl: result.secure_url,
+    });
+    
+  } catch (error) {
+    console.error("Error generating invoice:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -1105,5 +1235,5 @@ export default sendEmailToAdmin;
 export { rateOrder };
 
 export {getOrderDetails};
-export {placeOrder};
+export {placeOrder, generateInvoice};
 export {updateOrderStatus, acceptOrder, declineOrder, viewOrders, viewBill, cancelOrder};
