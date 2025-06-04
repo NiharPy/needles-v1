@@ -65,6 +65,11 @@ const Boutiquelogin = async function (req, res) {
       return res.status(404).json({ message: "Boutique Account not found." });
     }
 
+    // Check if name and password match
+    if (Boutique.name !== name || Boutique.password !== password) {
+      return res.status(401).json({ message: "Invalid name or password." });
+    }
+
     // Generate a new OTP
     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
@@ -76,9 +81,11 @@ const Boutiquelogin = async function (req, res) {
     // Send OTP to the phone number
     await sendOTP(phone, otp);
 
+    // Respond with instruction to switch to OTP page
     res.status(200).json({
       message: "OTP sent to your phone. Please verify to complete login.",
-      boutiqueUserId: Boutique._id, // Include the user ID for OTP verification
+      switchToOTPPage: true,
+      boutiqueUserId: Boutique._id,
     });
   } catch (error) {
     console.error("Error during login:", error.message);
@@ -87,6 +94,7 @@ const Boutiquelogin = async function (req, res) {
     res.status(500).json({ message: "An unexpected error occurred during login." });
   }
 };
+
 
 const boutiquesData = async function (req, res) {
   try {
