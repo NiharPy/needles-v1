@@ -16,6 +16,13 @@ const boutiqueSchema = new mongoose.Schema({
     latitude: Number,
     longitude: Number,
   },
+
+  // 🆕 Header image for boutique profile
+  headerImage: {
+    type: String, // Cloudinary image URL
+    default: '',  // Optional: provide a default image URL
+  },
+
   catalogue: [
     {
       itemName: [String],
@@ -28,7 +35,7 @@ const boutiqueSchema = new mongoose.Schema({
         type: String,
         required: true,
       },
-      images: [{type : String}], // Array of image URLs for each dress type
+      images: [{ type: String }], // Array of image URLs for each dress type
       measurementRequirements: [String],
     },
   ],
@@ -65,6 +72,5 @@ const boutiqueSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-
-const BoutiqueModel = mongoose.model("Boutique", boutiqueSchema)
+const BoutiqueModel = mongoose.model("Boutique", boutiqueSchema);
 export default BoutiqueModel;

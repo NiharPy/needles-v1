@@ -6,7 +6,7 @@ import { sendOTP } from "../utils/otpService.js";
 const OTP_EXPIRATION_TIME = 5
 const CreateBoutique = async function (req, res) {
   try {
-    const { name, email, password, location, phone, dressTypes } = req.body;
+    const { name, email, password, location, phone, dressTypes, headerImage } = req.body;
 
     // Validate required fields
     if (!name || !password || !email || !location || !phone) {
@@ -15,13 +15,14 @@ const CreateBoutique = async function (req, res) {
         .send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
-    // Create new Boutique
+    // Create new Boutique with the header image URL if provided
     const CreatedBoutique = await BoutiqueModel.create({
       name,
       email,
       password,
       location,
       phone,
+      headerImage: headerImage || '', // If header image is provided, store it; otherwise, default to an empty string
     });
 
     return res.status(201).json(CreatedBoutique);
@@ -36,7 +37,6 @@ const CreateBoutique = async function (req, res) {
     return res.status(500).send("An unexpected error occurred");
   }
 };
-
 
 const Boutiquelogin = async function (req, res) {
   try {
