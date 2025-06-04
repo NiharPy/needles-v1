@@ -22,6 +22,7 @@ app.use(cors({
 }));
 
 app.use((req, res, next) => {
+    console.log("CORS headers being set.");
     res.header("Access-Control-Allow-Credentials", "true");
     next();
   });
@@ -44,11 +45,11 @@ app.listen(port, () => {
 });
 
 // === Log Environment Info ===
-console.log(`Running in ${process.env.NODE_ENV} mode`);
 console.log(`Database URI: ${config.DB_URI}`);
 console.log(`Log Level: ${config.LOG_LEVEL}`);
 console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
 console.log('Twilio Account SID:', process.env.TWILIO_ACCOUNT_SID);
 console.log('Twilio Auth Token:', process.env.TWILIO_AUTH_TOKEN);
 console.log('Twilio Messaging Service SID:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+
 
