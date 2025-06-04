@@ -4,25 +4,33 @@ import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 const OTP_EXPIRATION_TIME = 5
+import { getEmbedding } from '../utils/embedding.js';
 const CreateBoutique = async function (req, res) {
   try {
-    const { name, email, password, location, phone, dressTypes, headerImage } = req.body;
+    const { name, email, password, location, phone, dressTypes, headerImage, catalogue } = req.body;
 
-    // Validate required fields
-    if (!name || !password || !email || !location || !phone) {
-      return res
-        .status(400)
-        .send("All fields (name, password, email, location, phone, dressTypes) are required");
+    // 🔍 Validate required fields
+    if (!name || !password || !email || !location || !phone || !dressTypes) {
+      return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
-    // Create new Boutique with the header image URL if provided
+    // 🔹 Step 1: Construct input string for embedding (semantic summary)
+    const textForEmbedding = `${name} ${location.address || ''} ${dressTypes.map(d => d.type).join(' ')}`;
+
+    // 🔹 Step 2: Generate vector using OpenAI
+    const embedding = await getEmbedding(textForEmbedding);
+
+    // 🔹 Step 3: Create Boutique entry
     const CreatedBoutique = await BoutiqueModel.create({
       name,
       email,
       password,
-      location,
       phone,
-      headerImage: headerImage || '', // If header image is provided, store it; otherwise, default to an empty string
+      location,
+      dressTypes,
+      headerImage: headerImage || '', // optional
+      catalogue: catalogue || [],      // optional
+      embedding,                       // 💡 save vector
     });
 
     return res.status(201).json(CreatedBoutique);
@@ -33,10 +41,12 @@ const CreateBoutique = async function (req, res) {
       return res.status(422).json({ error: error.message, details: error.errors });
     }
 
-    // Handle any other unexpected errors
     return res.status(500).send("An unexpected error occurred");
   }
 };
+
+export default CreateBoutique;
+
 
 const Boutiquelogin = async function (req, res) {
   try {
@@ -98,88 +108,144 @@ const boutiquesData = async function (req, res) {
 
 
 const verifyOtpFB = async (req, res) => {
-    try {
-      const {phone, otp } = req.body;
-  
-      if (!phone || !otp) {
-        return res.status(400).json({ message: "Phone number and OTP are required." });
-      }
-  
-      // Find user by phone number (instead of userId)
-      const user = await BoutiqueModel.findOne({ phone });
-      if (!user) {
-        return res.status(404).json({ message: "Boutique Account not found." });
-      }
-  
-      // Check if OTP is expired
-      if (Date.now() > user.otpExpiry) {
-        return res.status(400).json({ message: "OTP has expired. Please request a new one." });
-      }
-  
-      // Verify OTP (no need to hash, just compare)
-      if (otp !== user.otp) {
-        return res.status(400).json({ message: "Invalid OTP. Please try again." });
-      }
-  
-      // Generate tokens after successful OTP verification
-      const accessToken = jwt.sign({ userId: user._id, name: user.name }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "30d" });
-      const refreshToken = jwt.sign({ userId: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "30d" });
-  
-      // Save refresh token
-      user.refreshToken = refreshToken;
-      await user.save();
-  
-      res.status(200).json({
-        message: "User authenticated successfully.",
-        accessToken,
-        refreshToken,
-      });
-  
-    } catch (error) {
-      console.error("Error verifying OTP:", error);
-      res.status(500).json({ message: "Server error. Please try again." });
+  try {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+      return res.status(400).json({ message: "Phone number and OTP are required." });
     }
-  };
+
+    const user = await BoutiqueModel.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ message: "Boutique Account not found." });
+    }
+
+    if (Date.now() > user.otpExpiry) {
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    if (otp !== user.otp) {
+      return res.status(400).json({ message: "Invalid OTP. Please try again." });
+    }
+
+    // Generate JWTs
+    const accessToken = jwt.sign(
+      { userId: user._id, name: user.name },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    // Save refresh token and clear OTP data
+    user.refreshToken = refreshToken;
+    user.otp = null;
+    user.otpExpiry = null;
+    await user.save();
+
+    // Set access token as HTTP-only cookie
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: false, // Not depending on NODE_ENV
+      sameSite: "strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    res.status(200).json({
+      message: "User authenticated successfully.",
+      refreshToken,
+    });
+  } catch (error) {
+    console.error("Error verifying OTP:", error);
+    res.status(500).json({ message: "Server error. Please try again." });
+  }
+};
 
   const boutiqueSearch = async function (req, res) {
     try {
-      const { query, location } = req.query;
+      const { query } = req.query;
   
-      // Construct search conditions dynamically
-      const searchConditions = {
-        $and: [
-          query
-            ? {
-                $or: [
-                  { name: { $regex: query, $options: 'i' } }, // Search in boutique name
-                  { "dressTypes.type": { $regex: query, $options: 'i' } }, // Search in dressTypes.type
-                ],
+      if (!query) {
+        return res.status(400).json({ message: 'Query is required for semantic search' });
+      }
+  
+      // 🔍 Step 1: Parse for rating and location from query
+      const ratingMatch = query.match(/(\d(\.\d)?)(\s?stars?|\s?star\s?rating)/i);
+      const locationMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
+      const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+      const locationValue = locationMatch ? locationMatch[1].trim() : null;
+  
+      // 🔹 Step 2: Get embedding of query
+      const queryVector = await getEmbedding(query);
+  
+      // 🔹 Step 3: Build $search pipeline
+      const pipeline = [
+        {
+          $search: {
+            knnBeta: {
+              path: 'embedding',
+              vector: queryVector,
+              k: 20, // get more to allow for sorting
+            },
+          },
+        },
+  
+        // 🔸 Filter by rating and location if parsed
+        ...(ratingValue
+          ? [{
+              $match: {
+                averageRating: { $gte: ratingValue }
               }
-            : null,
-          location
-            ? {
-                "location.address": { $regex: location, $options: 'i' }, // Search in boutique location
+            }]
+          : []),
+  
+        ...(locationValue
+          ? [{
+              $match: {
+                "location.address": { $regex: locationValue, $options: 'i' }
               }
-            : null,
-        ].filter(Boolean), // Remove null entries
-      };
+            }]
+          : []),
   
-      // Fields to select
-      const fieldsToSelect = 'name location.address dressTypes.type averageRating totalRatings';
+        {
+          $project: {
+            name: 1,
+            'location.address': 1,
+            'dressTypes.type': 1,
+            averageRating: 1,
+            totalRatings: 1,
+            score: { $meta: 'searchScore' }
+          },
+        },
   
-      // Fetch boutiques based on search conditions
-      const boutiques = await BoutiqueModel.find(searchConditions, fieldsToSelect);
+        // 🔸 Optional: Sort by rating and search score
+        {
+          $sort: {
+            averageRating: -1,
+            score: -1
+          }
+        },
   
-      // Send the response
+        // 🔸 Limit final results
+        { $limit: 10 }
+      ];
+  
+      const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
       res.status(200).json(boutiques);
+  
     } catch (error) {
-      console.error('Error fetching boutiques:', error);
+      console.error('Semantic Search Error:', error);
       res.status(500).json({
         success: false,
-        message: 'Server error. Unable to fetch search results.',
+        message: 'Server error. Unable to perform semantic search.',
       });
     }
   };
+  
   
 
 const viewBoutiqueDetails = async (req, res) => {

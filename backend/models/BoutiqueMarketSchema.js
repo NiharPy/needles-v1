@@ -69,6 +69,10 @@ const boutiqueSchema = new mongoose.Schema({
     totalOrders: { type: Number, default: 0 },
     totalRevenue: { type: Number, default: 0 },
   },
+  embedding: {
+    type: [Number], // vector of numbers
+    required: true
+  },
   createdAt: { type: Date, default: Date.now },
 });
 
