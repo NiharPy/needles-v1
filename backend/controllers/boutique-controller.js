@@ -52,6 +52,8 @@ const Boutiquelogin = async function (req, res) {
   try {
     const { name, password, phone } = req.body;
 
+    console.log("received credentials : ", req.body);
+
     // Validate required fields
     if (!name || !password || !phone) {
       return res.status(400).json({ message: "name, password, phone are required." });
