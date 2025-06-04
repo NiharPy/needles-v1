@@ -21,6 +21,11 @@ app.use(cors({
   credentials: true,               // allow httpOnly cookies
 }));
 
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Credentials", "true");
+    next();
+  });
+
 // === Database Connection ===
 connectDB();
 
