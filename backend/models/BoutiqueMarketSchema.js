@@ -31,14 +31,14 @@ const boutiqueSchema = new mongoose.Schema({
   },
 
   // 📚 Catalogue of items
+  // 📚 Catalogue of items
   catalogue: [
     {
-      itemName: { type: String },
-      price: { type: Number },
-      image: { type: String }, // Optional: Cloudinary image for the item
-      description: { type: String }, // Optional: Item description
+      itemName: { type: [String] }, // allows ["Blouse"]
+      price: { type: [Number] },    // allows [600]
     },
   ],
+
 
   // 👗 Dress types offered
   dressTypes: [

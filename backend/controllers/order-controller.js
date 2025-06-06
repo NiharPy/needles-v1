@@ -47,12 +47,17 @@ const placeOrder = async (req, res) => {
     const {
       userId,
       boutiqueId,
-      pickUp,
+      pickUp: rawPickUp,
       dressType,
       measurements: rawMeasurements,
       location,
+      catalogueItems,
     } = req.body;
 
+    // 🔁 Ensure pickUp is boolean
+    const pickUp = rawPickUp === true || rawPickUp === 'true';
+
+    // 🧪 Parse measurements string to object if needed
     let measurements;
     if (typeof rawMeasurements === "string") {
       const sanitizedMeasurements = rawMeasurements.trim();
@@ -67,18 +72,17 @@ const placeOrder = async (req, res) => {
       measurements = rawMeasurements;
     }
 
-    // Ensure referralImage file is uploaded
+    // ✅ Validate referral image upload
     if (!req.files || !req.files.referralImage || !req.files.referralImage[0]) {
       return res.status(400).json({ message: "Referral image is required" });
     }
 
-    // Cloudinary URL
     const referralImage = req.files.referralImage[0].path;
 
-    // Handle voice notes (Cloudinary URLs)
+    // 🎤 Handle voice notes
     let voiceNoteUrl = [];
     if (Array.isArray(req.files.voiceNotes)) {
-      voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path); // Cloudinary gives file.path as URL
+      voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path);
     }
 
     const user = await UserModel.findById(userId);
@@ -98,7 +102,19 @@ const placeOrder = async (req, res) => {
       return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
-    // Validate measurements if pickUp is false
+    // 🧾 Validate catalogue items if provided
+    if (catalogueItems && Array.isArray(catalogueItems)) {
+      catalogueItems.forEach(item => {
+        const itemName = Array.isArray(item.itemName) ? item.itemName : [String(item.itemName)];
+        const price = Array.isArray(item.price) ? item.price.map(Number) : [Number(item.price)];
+
+        if (itemName[0] && price[0]) {
+          boutique.catalogue.push({ itemName, price });
+        }
+      });
+    }
+
+    // 📏 Validate measurements if pickUp is false
     if (!pickUp && !measurements) {
       return res.status(400).json({
         message: `Measurements are required for dress type ${dressType} when pickUp is false`,
@@ -119,7 +135,7 @@ const placeOrder = async (req, res) => {
       }
     }
 
-    // Create new order
+    // 🛒 Create order
     const order = await OrderModel.create({
       userId: user._id,
       boutiqueId: boutique._id,
@@ -147,7 +163,7 @@ const placeOrder = async (req, res) => {
     user.orders.push({ orderId: order._id, status: "Pending" });
     await user.save();
 
-    // Schedule automatic cancellation if not accepted within 5 minutes
+    // ⏳ Schedule cancellation
     if (typeof scheduleOrderCancellation === "function") {
       scheduleOrderCancellation(order._id, user.phone);
     }

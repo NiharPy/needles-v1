@@ -325,8 +325,15 @@ const addItemToCatalogue = async (req, res) => {
 
     // Add new items to the catalogue
     newItems.forEach((item) => {
-      if (item.itemName && item.price && item.image) {
-        boutique.catalogue.push(item);
+      const itemName = Array.isArray(item.itemName) ? item.itemName : [String(item.itemName)];
+      const price = Array.isArray(item.price) ? item.price.map(Number) : [Number(item.price)];
+
+      // Only push if itemName and price are valid
+      if (itemName[0] && price[0]) {
+        boutique.catalogue.push({
+          itemName,
+          price,
+        });
       }
     });
 
@@ -336,12 +343,13 @@ const addItemToCatalogue = async (req, res) => {
     res.status(200).json({
       message: "Items added to the catalogue successfully.",
       updatedCatalogue: boutique.catalogue,
-    });
+    })
   } catch (error) {
     console.error("Error adding items to catalogue:", error);
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
+
 
 const getBoutiqueCatalogue = async (req, res) => {
   try {
