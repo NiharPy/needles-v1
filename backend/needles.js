@@ -1,4 +1,5 @@
 import express from "express";
+import dotenv from 'dotenv';
 import cors from "cors";
 import { connectDB } from "./config/db.js";
 import AdminRouter from "./APIroutes/AdminRouter.js";
@@ -6,6 +7,8 @@ import UsersRouter from "./APIroutes/UsersRouter.js";
 import BoutiquesRouter from "./APIroutes/BoutiquesRouter.js";
 import { config } from './config/config.js';
 import http from 'http';
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 14050;
@@ -51,5 +54,6 @@ console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
 console.log('Twilio Account SID:', process.env.TWILIO_ACCOUNT_SID);
 console.log('Twilio Auth Token:', process.env.TWILIO_AUTH_TOKEN);
 console.log('Twilio Messaging Service SID:', process.env.TWILIO_MESSAGING_SERVICE_SID);
+console.log("Loaded OpenAI Key:", process.env.OPENAI_API_KEY);
 
 

@@ -1,5 +1,7 @@
 import AdminModel from '../models/AdminSchema.js';
-import { sendOTP } from '../utils/otpService.js'; // Assuming you have a separate service to send OTPs
+import { sendOTP } from '../utils/otpService.js';
+import jwt from 'jsonwebtoken';
+ // Assuming you have a separate service to send OTPs
 const OTP_EXPIRATION_TIME = 5; 
 
 const registerAdmin = async function(req, res) {

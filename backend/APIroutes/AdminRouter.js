@@ -5,6 +5,7 @@ import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controlle
 import { updateODDDeliveryStatus } from '../controllers/ODdelivery-controller.js';
 import { updateCAASDeliveryStatus } from '../controllers/CAAS-controller.js';
 import authMiddleware from '../utils/auth-user.js';
+import { upload } from '../utils/cloudinary.js';
 const router = express.Router();
 
 router.get("/", (req, res) => {
@@ -17,7 +18,7 @@ router.route('/login').post(adminLogin);
 
 router.route('/verify-otp').post(verifyOtp);
 
-router.route('/createBoutique').post(CreateBoutique,authMiddleware);
+router.post('/create-boutique', upload.single('headerImage'),authMiddleware,CreateBoutique);
 
 router.route('/BoutiqueLocator').get(boutiqueSearch,authMiddleware);
 

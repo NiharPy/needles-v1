@@ -4,33 +4,59 @@ import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 const OTP_EXPIRATION_TIME = 5
+import { v2 as cloudinary } from 'cloudinary';
 import { getEmbedding } from '../utils/embedding.js';
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 const CreateBoutique = async function (req, res) {
   try {
-    const { name, email, password, location, phone, dressTypes, headerImage, catalogue } = req.body;
-
-    // 🔍 Validate required fields
-    if (!name || !password || !email || !location || !phone || !dressTypes) {
-      return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
-    }
-
-    // 🔹 Step 1: Construct input string for embedding (semantic summary)
-    const textForEmbedding = `${name} ${location.address || ''} ${dressTypes.map(d => d.type).join(' ')}`;
-
-    // 🔹 Step 2: Generate vector using OpenAI
-    const embedding = await getEmbedding(textForEmbedding);
-
-    // 🔹 Step 3: Create Boutique entry
-    const CreatedBoutique = await BoutiqueModel.create({
+    const {
       name,
       email,
       password,
       phone,
       location,
       dressTypes,
-      headerImage: headerImage || '', // optional
-      catalogue: catalogue || [],      // optional
-      embedding,                       // 💡 save vector
+      catalogue,
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !password || !email || !location || !phone || !dressTypes) {
+      return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
+    }
+
+    // ✅ Parse incoming stringified fields
+    const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
+    const parsedDressTypes = typeof dressTypes === 'string' ? JSON.parse(dressTypes) : dressTypes;
+    const parsedCatalogue = catalogue && typeof catalogue === 'string' ? JSON.parse(catalogue) : [];
+
+    // ✅ Upload header image to Cloudinary (if file sent)
+    let headerImageUrl = '';
+    if (req.file) {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'boutique_headers',
+      });
+      headerImageUrl = result.secure_url;
+    }
+
+    // ✅ Prepare embedding string and vector
+    const textForEmbedding = `${name} ${parsedLocation.address || ''} ${parsedDressTypes.map(d => d.type).join(' ')}`;
+    const embedding = await getEmbedding(textForEmbedding);
+
+    // ✅ Create Boutique document
+    const CreatedBoutique = await BoutiqueModel.create({
+      name,
+      email,
+      password,
+      phone,
+      location: parsedLocation,
+      dressTypes: parsedDressTypes,
+      headerImage: headerImageUrl,
+      catalogue: parsedCatalogue,
+      embedding,
     });
 
     return res.status(201).json(CreatedBoutique);
@@ -44,8 +70,6 @@ const CreateBoutique = async function (req, res) {
     return res.status(500).send("An unexpected error occurred");
   }
 };
-
-export default CreateBoutique;
 
 
 const Boutiquelogin = async function (req, res) {

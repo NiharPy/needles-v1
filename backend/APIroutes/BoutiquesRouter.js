@@ -17,7 +17,7 @@ router.route("/search").get(boutiqueSearch);
 
 router.route('/:boutiqueId/track').get(authMiddleware, trackBusiness);
 
-router.route('/:boutiqueId/order').get(authMiddleware,getBoutiqueOrders);
+router.route('/:boutiqueId/order').get(getBoutiqueOrders);
 
 router.route('/:boutiqueId/order-completed').get(authMiddleware,getCompletedOrders);
 

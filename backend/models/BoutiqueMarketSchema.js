@@ -4,46 +4,62 @@ const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+
+  // 🔐 OTP and auth fields
   otp: { type: String, default: '' },
+
   phone: {
     type: String,
     required: true,
     unique: true,
     match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'],
   },
+
+  // 📍 Location with address and coordinates
   location: {
-    address: String,
-    latitude: Number,
-    longitude: Number,
+    address: { type: String },
+    city: { type: String },
+    state: { type: String },
+    latitude: { type: Number },
+    longitude: { type: Number },
   },
 
-  // 🆕 Header image for boutique profile
+  // 🖼️ Header image for boutique profile
   headerImage: {
     type: String, // Cloudinary image URL
-    default: '',  // Optional: provide a default image URL
+    default: '',
   },
 
+  // 📚 Catalogue of items
   catalogue: [
     {
-      itemName: [String],
-      price: [Number],
+      itemName: { type: String },
+      price: { type: Number },
+      image: { type: String }, // Optional: Cloudinary image for the item
+      description: { type: String }, // Optional: Item description
     },
   ],
+
+  // 👗 Dress types offered
   dressTypes: [
     {
       type: {
         type: String,
         required: true,
       },
-      images: [{ type: String }], // Array of image URLs for each dress type
-      measurementRequirements: [String],
+      images: [{ type: String }], // Image URLs for this dress type
+      measurementRequirements: [String], // e.g. ["Chest", "Waist", "Length"]
     },
   ],
+
+  // 🧑‍💼 Role (admin/boutique/user)
   role: {
     type: String,
     enum: ['admin', 'Boutique', 'User'],
     default: 'Boutique',
   },
+
+  // 🧾 Orders received by the boutique
   orders: [
     {
       orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
@@ -56,6 +72,8 @@ const boutiqueSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
+
+  // ⭐ Ratings and reviews from users
   ratings: [
     {
       userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -65,14 +83,20 @@ const boutiqueSchema = new mongoose.Schema({
   ],
   averageRating: { type: Number, default: 0 },
   totalRatings: { type: Number, default: 0 },
+
+  // 📊 Business metrics
   businessTracker: {
     totalOrders: { type: Number, default: 0 },
     totalRevenue: { type: Number, default: 0 },
   },
+
+  // 🔍 Semantic vector for NL search
   embedding: {
-    type: [Number], // vector of numbers
-    required: true
+    type: [Number],
+    required: true,
   },
+
+  // 📅 Timestamps
   createdAt: { type: Date, default: Date.now },
 });
 
