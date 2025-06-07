@@ -842,7 +842,16 @@ const createBill = async (req, res) => {
   try {
     const { boutiqueId, orderId, selectedItems, additionalCost } = req.body;
 
-    // Find the boutique and order
+    // ✅ Validate MongoDB ObjectIds
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ error: "Invalid order ID" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ error: "Invalid boutique ID" });
+    }
+
+    // ✅ Find the boutique and order
     const boutique = await BoutiqueModel.findById(boutiqueId);
     const order = await OrderModel.findById(orderId).populate("userId");
 
@@ -855,13 +864,13 @@ const createBill = async (req, res) => {
       return res.status(400).json({ message: "Cannot generate bill for a declined order." });
     }
 
-    // ✅ Set status to Accepted if not declined
+    // ✅ Set status to Accepted
     order.status = "Accepted";
 
     let totalAmount = 0;
     let billDetails = {};
 
-    // Calculate item total
+    // ✅ Calculate item total
     selectedItems.forEach(({ item, quantity }) => {
       const catalogItem = boutique.catalogue.find((c) => c.itemName.includes(item));
       if (catalogItem) {
@@ -871,18 +880,18 @@ const createBill = async (req, res) => {
       }
     });
 
-    // Platform fee
+    // ✅ Platform fee (2%)
     const platformFee = totalAmount * 0.02;
     totalAmount += platformFee;
 
-    // Delivery fee
+    // ✅ Delivery fee
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
     const deliveryFee = calculateDeliveryFee(distance);
     totalAmount += deliveryFee;
 
-    // Additional cost (allow 0)
+    // ✅ Additional cost (if any)
     let additionalCostValue = 0;
     let additionalCostReason = "Not specified";
 
@@ -900,20 +909,11 @@ const createBill = async (req, res) => {
       }
     }
 
-    // GST (12%)
+    // ✅ GST (12%)
     const gst = totalAmount * 0.12;
     totalAmount += gst;
 
-    // Debug logs
-    console.log("Bill Details:", billDetails);
-    console.log("Platform Fee:", platformFee);
-    console.log("Delivery Fee:", deliveryFee);
-    console.log("Additional Cost:", additionalCostValue);
-    console.log("Additional Cost Reason:", additionalCostReason);
-    console.log("GST:", gst);
-    console.log("Final Total:", totalAmount);
-
-    // Update order.bill
+    // ✅ Update order bill
     order.bill = {
       items: billDetails,
       platformFee,
@@ -931,30 +931,10 @@ const createBill = async (req, res) => {
     order.totalAmount = totalAmount;
     await order.save();
 
-    // SMS to user
-    const smsText = `Hi ${order.userId.name}, your order has been successfully accepted and a bill has been created.🎉 Order ID: ${order._id}. Total Amount: ₹${totalAmount.toFixed(2)}. Check Needles for details.`;
-
-    await client.messages.create({
-      body: smsText,
-      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      to: order.userId.phone,
-    });
-
-    // Send bill in response
+    // ✅ Send response (no Twilio)
     res.status(200).json({
       message: "Bill created successfully",
-      bill: {
-        items: billDetails,
-        platformFee,
-        deliveryFee,
-        additionalCost: {
-          amount: additionalCostValue,
-          reason: additionalCostReason,
-        },
-        gst,
-        totalAmount,
-        status: "Pending",
-      },
+      bill: order.bill,
       orderId: order._id,
       status: order.status,
     });
@@ -963,6 +943,7 @@ const createBill = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 
