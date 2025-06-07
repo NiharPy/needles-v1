@@ -53,7 +53,7 @@ router.route('/:boutiqueId/alteration/respond/:altOrderId').put(authMiddleware, 
 
 router.route('/:boutiqueId/alterations').get(authMiddleware, getAlterationRequestsForBoutique);
 
-router.route("/:boutiqueId/createBill").post(authMiddleware,createBill);
+router.route("/:boutiqueId/createBill").post(createBill);
 
 router.route('/:boutiqueId/generate-invoice/:orderId').get(generateInvoice);
 
