@@ -4,6 +4,7 @@ import authMiddleware from '../utils/auth-user.js';
 import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder, getBoutiqueOrders, getCompletedOrders, generateInvoice} from '../controllers/order-controller.js';
 
 import {createBill} from '../controllers/order-controller.js';
+import { upload } from '../utils/cloudinary.js';
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.route('/:boutiqueId/order/:orderId/status').post(authMiddleware,updateOrd
 
 router.route('/:boutiqueId/order/:orderId').get(authMiddleware,getOrderDetails);
 
-router.route("/:boutiqueId/order/:orderId/accept").post(authMiddleware, acceptOrder);
+router.route("/:boutiqueId/order/:orderId/accept").post(acceptOrder);
 
 router.route("/:boutiqueId/order/:orderId/decline").post(authMiddleware, declineOrder);
 
@@ -37,7 +38,12 @@ router.route("/:boutiqueId/add-catalogue-item").post(addItemToCatalogue);
 
 router.route("/:boutiqueId/delete-catalogue-item").delete(deleteItemFromCatalogue);
 
-router.route("/:boutiqueId/add-dressType").post(addDressType);
+router.post(
+    '/:boutiqueId/add-dress-type',
+    upload.fields([{ name: 'images', maxCount: 5 }]),
+    addDressType
+  );
+  
 
 router.route("/:boutiqueId/delete-dressType").delete(deleteDressType);
 

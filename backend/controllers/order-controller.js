@@ -850,10 +850,13 @@ const createBill = async (req, res) => {
       return res.status(404).json({ error: "Boutique or Order not found" });
     }
 
-    // Update order status if not already accepted
-    if (order.status !== "Accepted") {
-      order.status = "Accepted";
+    // ❌ Do not allow bill creation for declined orders
+    if (order.status === "Declined") {
+      return res.status(400).json({ message: "Cannot generate bill for a declined order." });
     }
+
+    // ✅ Set status to Accepted if not declined
+    order.status = "Accepted";
 
     let totalAmount = 0;
     let billDetails = {};
@@ -960,6 +963,7 @@ const createBill = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 

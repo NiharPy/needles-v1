@@ -23,17 +23,17 @@ const CreateBoutique = async function (req, res) {
       catalogue,
     } = req.body;
 
-    // Validate required fields
+    // ✅ Validate required fields
     if (!name || !password || !email || !location || !phone || !dressTypes) {
       return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
-    // ✅ Parse incoming stringified fields
+    // ✅ Parse stringified fields
     const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
     const parsedDressTypes = typeof dressTypes === 'string' ? JSON.parse(dressTypes) : dressTypes;
     const parsedCatalogue = catalogue && typeof catalogue === 'string' ? JSON.parse(catalogue) : [];
 
-    // ✅ Upload header image to Cloudinary (if file sent)
+    // ✅ Upload header image to Cloudinary (if present)
     let headerImageUrl = '';
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path, {
@@ -42,11 +42,7 @@ const CreateBoutique = async function (req, res) {
       headerImageUrl = result.secure_url;
     }
 
-    // ✅ Prepare embedding string and vector
-    const textForEmbedding = `${name} ${parsedLocation.address || ''} ${parsedDressTypes.map(d => d.type).join(' ')}`;
-    const embedding = await getEmbedding(textForEmbedding);
-
-    // ✅ Create Boutique document
+    // ✅ Create boutique WITHOUT embedding
     const CreatedBoutique = await BoutiqueModel.create({
       name,
       email,
@@ -56,7 +52,7 @@ const CreateBoutique = async function (req, res) {
       dressTypes: parsedDressTypes,
       headerImage: headerImageUrl,
       catalogue: parsedCatalogue,
-      embedding,
+      // embedding is intentionally omitted
     });
 
     return res.status(201).json(CreatedBoutique);
@@ -199,87 +195,111 @@ const verifyOtpFB = async (req, res) => {
   }
 };
 
-  const boutiqueSearch = async function (req, res) {
-    try {
-      const { query } = req.query;
-  
-      if (!query) {
-        return res.status(400).json({ message: 'Query is required for semantic search' });
-      }
-  
-      // 🔍 Step 1: Parse for rating and location from query
-      const ratingMatch = query.match(/(\d(\.\d)?)(\s?stars?|\s?star\s?rating)/i);
-      const locationMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
-      const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
-      const locationValue = locationMatch ? locationMatch[1].trim() : null;
-  
-      // 🔹 Step 2: Get embedding of query
-      const queryVector = await getEmbedding(query);
-  
-      // 🔹 Step 3: Build $search pipeline
-      const pipeline = [
-        {
-          $search: {
-            knnBeta: {
-              path: 'embedding',
-              vector: queryVector,
-              k: 20, // get more to allow for sorting
-            },
-          },
-        },
-  
-        // 🔸 Filter by rating and location if parsed
-        ...(ratingValue
-          ? [{
-              $match: {
-                averageRating: { $gte: ratingValue }
-              }
-            }]
-          : []),
-  
-        ...(locationValue
-          ? [{
-              $match: {
-                "location.address": { $regex: locationValue, $options: 'i' }
-              }
-            }]
-          : []),
-  
-        {
-          $project: {
-            name: 1,
-            'location.address': 1,
-            'dressTypes.type': 1,
-            averageRating: 1,
-            totalRatings: 1,
-            score: { $meta: 'searchScore' }
-          },
-        },
-  
-        // 🔸 Optional: Sort by rating and search score
-        {
-          $sort: {
-            averageRating: -1,
-            score: -1
-          }
-        },
-  
-        // 🔸 Limit final results
-        { $limit: 10 }
-      ];
-  
-      const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
-      res.status(200).json(boutiques);
-  
-    } catch (error) {
-      console.error('Semantic Search Error:', error);
-      res.status(500).json({
+const boutiqueSearch = async function (req, res) {
+  try {
+    const { query } = req.query;
+
+    if (!query) {
+      return res.status(400).json({ message: 'Query is required for semantic search' });
+    }
+
+    // 🔍 Parse rating and location
+    const ratingMatch = query.match(/(\d(\.\d)?)(\s?stars?|\s?star\s?rating)/i);
+    const locationMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
+
+    const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+    const locationValue = locationMatch ? locationMatch[1].trim() : null;
+
+    console.log("Semantic Search Debug → Query:", query);
+    console.log("Parsed Rating:", ratingValue);
+    console.log("Parsed Location:", locationValue);
+
+    // 🔹 Get embedding vector
+    const queryVector = await getEmbedding(query);
+    if (!queryVector || !Array.isArray(queryVector) || queryVector.length < 100) {
+      return res.status(500).json({
         success: false,
-        message: 'Server error. Unable to perform semantic search.',
+        message: 'Failed to generate valid query vector for semantic search.',
       });
     }
-  };
-  
+
+    console.log("Query vector length:", queryVector.length);
+
+    // 🔹 Build $search pipeline
+    const pipeline = [
+      {
+        $search: {
+          knnBeta: {
+            path: 'embedding',
+            vector: queryVector,
+            k: 20,
+          },
+        },
+      },
+
+      // 🔸 Optional filters
+      ...(ratingValue
+        ? [{
+            $match: {
+              averageRating: { $gte: ratingValue }
+            }
+          }]
+        : []),
+
+      ...(locationValue
+        ? [{
+            $match: {
+              "location.address": { $regex: locationValue, $options: 'i' }
+            }
+          }]
+        : []),
+
+      {
+        $project: {
+          name: 1,
+          'location.address': 1,
+          'dressTypes.type': 1,
+          averageRating: 1,
+          totalRatings: 1,
+          score: { $meta: 'searchScore' }
+        },
+      },
+
+      {
+        $sort: {
+          averageRating: -1,
+          score: -1
+        }
+      },
+
+      { $limit: 10 }
+    ];
+
+    // 🔍 Run aggregation
+    const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
+
+    // ⛑️ If empty, fallback to basic query (to confirm data exists)
+    if (boutiques.length === 0) {
+      console.warn("⚠️ Semantic Search returned no results. Trying fallback query...");
+      const fallback = await BoutiqueModel.find().limit(3).select("name location averageRating").exec();
+      return res.status(200).json({
+        message: "No matches found with semantic search. Showing fallback boutiques.",
+        results: fallback
+      });
+    }
+
+    // ✅ Return search results
+    res.status(200).json(boutiques);
+
+  } catch (error) {
+    console.error('Semantic Search Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error. Unable to perform semantic search.',
+    });
+  }
+};
+
   
 
 const viewBoutiqueDetails = async (req, res) => {
@@ -488,17 +508,32 @@ const getRecommendedBoutiquesByDressType = async (req, res) => {
 
 
 const addDressType = async (req, res) => {
-  const { boutiqueId, dressType, images, measurementRequirements } = req.body;
-
   try {
+    const { boutiqueId, dressType, measurementRequirements } = req.body;
+
+    if (!boutiqueId || !dressType) {
+      return res.status(400).json({ message: 'boutiqueId and dressType are required' });
+    }
+
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
 
-    // Add the new dress type with measurement requirements to the boutique
+    // ✅ Upload multiple images from req.files.images to Cloudinary
+    let imageUrls = [];
+    if (req.files && req.files.images) {
+      const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
+      const uploads = files.map(file =>
+        cloudinary.uploader.upload(file.path, { folder: 'dress_types' })
+      );
+      const results = await Promise.all(uploads);
+      imageUrls = results.map(r => r.secure_url);
+    }
+
+    // ✅ Add new dress type with Cloudinary URLs
     boutique.dressTypes.push({
       type: dressType,
-      images,
-      measurementRequirements, // Add the new field
+      images: imageUrls,
+      measurementRequirements: JSON.parse(measurementRequirements || '[]'),
     });
 
     await boutique.save();
@@ -509,6 +544,7 @@ const addDressType = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 
 const deleteDressType = async (req, res) => {
