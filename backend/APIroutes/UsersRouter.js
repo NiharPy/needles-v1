@@ -28,7 +28,7 @@ router.route("/search").get(authMiddleware,boutiqueSearch);
 
 router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
 
-router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypez);
+router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypesWithDetails);
 
 router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
 
