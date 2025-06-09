@@ -681,9 +681,6 @@ const getOrdersByStatus = async (req, res) => {
 
     // ✅ Allowed order statuses
     const validStatuses = [
-      "Pending",
-      "Accepted",
-      "Declined",
       "In Progress",
       "Ready for Delivery",
     ];
