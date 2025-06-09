@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue, getDressTypez} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue, getDressTypesWithDetails} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
