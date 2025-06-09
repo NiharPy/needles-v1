@@ -667,9 +667,9 @@ const getDressTypesWithDetails = async (req, res) => {
 
 export { getDressTypesWithDetails};
 
-const getPaidOrders = async (req, res) => {
+const getOrdersByStatus = async (req, res) => {
   try {
-    const { boutiqueId, userId } = req.query;
+    const { boutiqueId, userId, status } = req.query;
 
     // ✅ Validate ObjectId if provided
     if (boutiqueId && !mongoose.Types.ObjectId.isValid(boutiqueId)) {
@@ -679,28 +679,47 @@ const getPaidOrders = async (req, res) => {
       return res.status(400).json({ error: "Invalid user ID" });
     }
 
+    // ✅ Allowed order statuses
+    const validStatuses = [
+      "Pending",
+      "Accepted",
+      "Declined",
+      "In Progress",
+      "Ready for Delivery",
+    ];
+
     // ✅ Build query
-    const query = { "bill.status": "Paid" };
+    const query = {};
     if (boutiqueId) query.boutiqueId = boutiqueId;
     if (userId) query.userId = userId;
 
-    // ✅ Fetch paid orders
+    if (status) {
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: `Invalid status. Allowed values: ${validStatuses.join(", ")}` });
+      }
+      query.status = status;
+    } else {
+      // Default to fetching active/paid orders if no status provided
+      query["bill.status"] = "Paid";
+    }
+
+    // ✅ Fetch orders
     const orders = await OrderModel.find(query)
-      .populate("userId", "name phone")        // Optional: include user details
-      .populate("boutiqueId", "name location") // Optional: include boutique details
-      .sort({ createdAt: -1 }); // Most recent first
+      .populate("userId", "name phone")
+      .populate("boutiqueId", "name location")
+      .sort({ createdAt: -1 });
 
     res.status(200).json({
-      message: `Found ${orders.length} paid order(s).`,
+      message: `Found ${orders.length} order(s).`,
       orders,
     });
   } catch (error) {
-    console.error("Error fetching paid orders:", error);
+    console.error("Error fetching orders:", error);
     res.status(500).json({ error: "Server error", details: error.message });
   }
 };
 
-export {getPaidOrders};
+export {getOrdersByStatus};
 export {trackBusiness};
 
 
