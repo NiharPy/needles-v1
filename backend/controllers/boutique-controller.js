@@ -640,25 +640,32 @@ const trackBusiness = async (req, res) => {
   }
 };
 
-const getDressTypez = async (req, res) => {
+const getDressTypesWithDetails = async (req, res) => {
   const { boutiqueId } = req.params;
 
   try {
-    // Find the boutique by ID
+    // ✅ Find the boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
+
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    // Extract and return dress types
-    const dressTypes = boutique.dressTypes.map((item) => item.type);
+    // ✅ Return full dress type details
+    const dressTypes = boutique.dressTypes.map((type) => ({
+      type: type.type,
+      images: type.images,
+      measurementRequirements: type.measurementRequirements,
+    }));
 
     res.status(200).json({ dressTypes });
   } catch (error) {
-    console.error('Error fetching dress types:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching dress types with details:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
+
+export { getDressTypesWithDetails};
 
 const getPaidOrders = async (req, res) => {
   try {
@@ -698,7 +705,7 @@ export {trackBusiness};
 
 
 
-export {getDressTypeImages, getDressTypez};
+export {getDressTypeImages};
 
 export {addDressType};
 

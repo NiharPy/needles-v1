@@ -32,7 +32,7 @@ router.route("/:boutiqueId/order/:orderId/decline").post(authMiddleware, decline
 
 router.route("/:boutiqueId/catalogue").get(getBoutiqueCatalogue);
 
-router.route("/:boutiqueId/dresstypes").get(getDressTypez);
+router.route("/:boutiqueId/dresstypes").get(getDressTypesWithDetails);
 
 router.route("/:boutiqueId/add-catalogue-item").post(addItemToCatalogue);
 
