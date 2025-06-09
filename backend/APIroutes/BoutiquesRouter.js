@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypez} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypez, getPaidOrders} from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder, getBoutiqueOrders, getCompletedOrders, generateInvoice} from '../controllers/order-controller.js';
 
@@ -56,6 +56,8 @@ router.route('/:boutiqueId/alterations').get(authMiddleware, getAlterationReques
 router.route("/:boutiqueId/createBill").post(createBill);
 
 router.route('/:boutiqueId/generate-invoice/:orderId').get(generateInvoice);
+
+router.route("/:boutiqueId/PaidOrders").get(getPaidOrders);
 
 
 

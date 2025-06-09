@@ -660,6 +660,40 @@ const getDressTypez = async (req, res) => {
   }
 };
 
+const getPaidOrders = async (req, res) => {
+  try {
+    const { boutiqueId, userId } = req.query;
+
+    // ✅ Validate ObjectId if provided
+    if (boutiqueId && !mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ error: "Invalid boutique ID" });
+    }
+    if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    // ✅ Build query
+    const query = { "bill.status": "Paid" };
+    if (boutiqueId) query.boutiqueId = boutiqueId;
+    if (userId) query.userId = userId;
+
+    // ✅ Fetch paid orders
+    const orders = await OrderModel.find(query)
+      .populate("userId", "name phone")        // Optional: include user details
+      .populate("boutiqueId", "name location") // Optional: include boutique details
+      .sort({ createdAt: -1 }); // Most recent first
+
+    res.status(200).json({
+      message: `Found ${orders.length} paid order(s).`,
+      orders,
+    });
+  } catch (error) {
+    console.error("Error fetching paid orders:", error);
+    res.status(500).json({ error: "Server error", details: error.message });
+  }
+};
+
+export {getPaidOrders};
 export {trackBusiness};
 
 
