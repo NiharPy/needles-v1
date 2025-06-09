@@ -22,7 +22,7 @@ router.route('/:boutiqueId/order').get(getBoutiqueOrders);
 
 router.route('/:boutiqueId/order-completed').get(authMiddleware,getCompletedOrders);
 
-router.route('/:boutiqueId/order/:orderId/status').post(authMiddleware,updateOrderStatus);
+router.route('/:boutiqueId/order/:orderId/status').post(updateOrderStatus);
 
 router.route('/:boutiqueId/order/:orderId').get(authMiddleware,getOrderDetails);
 
