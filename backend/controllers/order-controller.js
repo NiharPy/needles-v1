@@ -471,57 +471,60 @@ const updateOrderStatus = async (req, res) => {
 
     const validStatuses = ['Pending', 'In Progress', 'Ready for Delivery'];
 
-    // Validate status
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
 
-    // Find the order
     const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Check if boutique exists
     if (!order.boutiqueId) {
       return res.status(400).json({ message: 'Boutique not found in the order' });
     }
 
-    const boutique = await BoutiqueModel.findById(order.boutiqueId);
+    const boutique = await BoutiqueModel.findById(order.boutiqueId._id);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    // Update order status
+    // ✅ Update order status
     order.status = status;
     await order.save();
 
-    // Update Boutique orders
-    const boutiqueOrder = boutique.orders.find((o) => o.orderId.toString() === orderId.toString());
+    // ✅ Update boutique embedded order status
+    const boutiqueOrder = boutique.orders.find(
+      (o) => o?.orderId?.toString() === orderId.toString()
+    );
     if (boutiqueOrder) {
       boutiqueOrder.status = status;
       await boutique.save();
     }
 
-    // Update User orders
-    const user = await UserModel.findById(order.userId);
-    const userOrder = user.orders.find((o) => o.orderId.toString() === orderId.toString());
-    if (userOrder) {
-      userOrder.status = status;
-      await user.save();
+    // ✅ Update user embedded order status
+    const user = await UserModel.findById(order.userId._id);
+    if (user && user.orders && Array.isArray(user.orders)) {
+      const userOrder = user.orders.find(
+        (o) => o?.orderId?.toString() === orderId.toString()
+      );
+      if (userOrder) {
+        userOrder.status = status;
+        await user.save();
+      }
     }
 
-    // Handle notification for "Ready for Delivery"
+    // ✅ Optional: Email notification if status is "Ready for Delivery"
     if (status === 'Ready for Delivery') {
-      const userLocation = order.userId.address;
-      const boutiqueLocation = order.boutiqueId.location;
+      const userLocation = order.userId?.address || 'Not Provided';
+      const boutiqueLocation = order.boutiqueId?.location?.address || 'Not Provided';
       const orderID = order._id;
 
       const emailText = `
         A Boutique is ready to deliver an order:
         - User Location: ${userLocation}
         - Boutique Location: ${boutiqueLocation}
-        - Order Id : ${orderID}
+        - Order ID: ${orderID}
       `;
       await sendEmailToAdmin('Ready for Delivery', emailText);
     }
