@@ -1,7 +1,7 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedBoutiquesByDressType, getDressTypeImages, getBoutiqueCatalogue, getDressTypesWithDetails} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin } from '../controllers/user-controller.js';
-import { placeOrder, getOrderDetails, rateOrder, requestAlteration, getUserAlterationOrders, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
+import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages, viewODDOrders, getODDOrderDetails} from '../controllers/ODdelivery-controller.js';
@@ -55,11 +55,9 @@ router.route('/:userId/recommended/:dressType').get(authMiddleware, getRecommend
 
 router.route("/:userId/rate-order").post(authMiddleware, rateOrder);
 
-router.route("/:userId/orders/request-alteration").post(authMiddleware, requestAlteration);
+router.route("/:userId/orders/alterations").get(getUserAlterationRequests);
 
-router.route("/:userId/orders/alterations").get(authMiddleware, getUserAlterationOrders);
-
-router.route('/:userId/alterations/:altOrderId/submit').post(authMiddleware, upload.fields([
+router.route('/:userId/alterations/submit').post(upload.fields([
   { name: "referenceImage", maxCount: 1 }, // Required
   { name: "orderImage", maxCount: 3 }, // Required
   { name: "voiceNotes", maxCount: 5 }, // Optional, max 5 files

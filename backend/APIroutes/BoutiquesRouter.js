@@ -47,11 +47,11 @@ router.post(
 
 router.route("/:boutiqueId/delete-dressType").delete(deleteDressType);
 
-router.route('/:boutiqueId/alteration/review/:altOrderId').put(authMiddleware, reviewAlterationRequest);
+router.route('/:boutiqueId/alteration/review/:altOrderId').put(reviewAlterationRequest);
 
-router.route('/:boutiqueId/alteration/respond/:altOrderId').put(authMiddleware, respondToAlterationRequest);
+router.route('/:boutiqueId/alteration/respond/:altOrderId').put(respondToAlterationRequest);
 
-router.route('/:boutiqueId/alterations').get(authMiddleware, getAlterationRequestsForBoutique);
+router.route('/:boutiqueId/alterations').get(getAlterationRequestsForBoutique);
 
 router.route("/:boutiqueId/createBill").post(createBill);
 

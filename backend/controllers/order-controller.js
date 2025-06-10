@@ -2,7 +2,6 @@ import OrderModel from '../models/OrderSchema.js';
 import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import UserModel from '../models/userschema.js';
 import nodemailer from 'nodemailer';
-import AltorderModel from '../models/AlterOrderSchema.js';
 import AlterationRequest from '../models/AlterationRequest.js';
 import mongoose from 'mongoose';
 import axios from 'axios';
@@ -625,156 +624,86 @@ const rateOrder = async (req, res) => {
   }
 };
 
-const requestAlteration = async (req, res) => {
-  try {
-    const { userId, orderId } = req.body;
-
-    // Find the original order
-    const originalOrder = await OrderModel.findById(orderId);
-    if (!originalOrder) return res.status(404).json({ message: 'Order not found' });
-
-    // Check if the user is the owner of the order
-    if (originalOrder.userId.toString() !== userId) {
-      return res.status(403).json({ message: 'Unauthorized request' });
-    }
-
-    // Find the boutique handling the order
-    const boutique = await BoutiqueModel.findById(originalOrder.boutiqueId);
-    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
-
-    // Update alteration status in the original order
-    originalOrder.alterations = true;
-    await originalOrder.save();
-
-    // Create a new Altorder
-    const altOrder = new AltorderModel({
-      originalOrderId: orderId,
-      orderId: new mongoose.Types.ObjectId(), // Use 'new' keyword to create a new ObjectId
-      userId,
-      boutiqueId: originalOrder.boutiqueId,
-      deliveryStatus: 'Pending',
-      alterations: true,
-    });
-
-    await altOrder.save();
-
-    // Update User schema
-    const user = await UserModel.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    user.orders.push({
-      orderId: altOrder.orderId,
-      dressType: originalOrder.dressType,
-      alterations: true,
-      status: 'Pending',
-    });
-    await user.save();
-
-    // Update Boutique schema
-    boutique.orders.push({
-      orderId: altOrder.orderId,
-      alterations: true,
-    });
-    await boutique.save();
-
-    const mailOptions = {
-      from: 'nihar.neelala124@gmail.com',
-      to: 'needles.personal.2025@gmail.com',
-      subject: 'New Alteration Request',
-      text: `An alteration request has been made for Order ID: ${orderId}.
-New Alteration Order ID: ${altOrder.orderId}
-User Location: ${user.address.flatNumber}, ${user.address.block}, ${user.address.street}
-Boutique Location: ${boutique.location.address}`,
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    res.status(200).json({ message: 'Alteration request placed successfully', altOrder });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
 
 
-
-const getUserAlterationOrders = async (req, res) => {
+export const getUserAlterationRequests = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Check if user exists
     const user = await UserModel.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Find all alteration orders for the user and populate the originalOrderId field
-    const alterationOrders = await AltorderModel.find({ userId })
-      .populate('originalOrderId') // This is to populate the order details
+    const alterationRequests = await AlterationRequest.find({ userId })
+      .populate("boutiqueId", "name phone location")
       .exec();
 
-    if (alterationOrders.length === 0) {
-      return res.status(404).json({ message: 'No alteration orders found for this user' });
+    if (alterationRequests.length === 0) {
+      return res.status(404).json({ message: "No alteration requests found for this user" });
     }
 
     res.status(200).json({
-      message: 'Alteration orders retrieved successfully',
-      alterationOrders,
+      message: "Alteration requests retrieved successfully",
+      alterationRequests,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Error fetching user alteration requests:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 // 📌 Submit Alteration Request
 export const submitAlterationRequest = async (req, res) => {
   try {
-    const { userId, boutiqueId, altOrderId, alterationType, issueArea, fixType } = req.body;
+    const { boutiqueId, description } = req.body;
+    const { userId } = req.params;
 
-    // Ensure User Exists
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Ensure Boutique Exists
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: "Boutique not found" });
 
-    // Check if the order already has two alteration requests
-    const existingAltOrders = await AlterationRequest.countDocuments({ altOrderId });
-    if (existingAltOrders >= 2) {
-      return res.status(400).json({ message: "Maximum of 2 alteration requests allowed per order" });
-    }
-
-    // Ensure referenceImage & orderImage files are uploaded
     if (!req.files || !req.files.referenceImage || !req.files.orderImage) {
-      return res.status(400).json({ message: "Both reference image and order image are required" });
+      return res.status(400).json({ message: "Reference image and at least one order image are required" });
     }
 
-    // Upload reference image & order image
     const referenceImage = req.files.referenceImage[0].path;
-    const orderImage = req.files.orderImage[0].path;
+    const orderImage = req.files.orderImage.map(file => file.path);
 
-    // Ensure AltvoiceNotes files are uploaded (Optional, but stores up to 5)
-    let AltvoiceNotes = [];
-    if (req.files?.AltvoiceNotes?.length > 0) {
-      const maxFiles = 5;
-      req.files.AltvoiceNotes.slice(0, maxFiles).forEach((file) => {
-        AltvoiceNotes.push(file.path);
-      });
+    let voiceNotes = [];
+    if (req.files?.voiceNote?.length > 0) {
+      voiceNotes = req.files.voiceNote.slice(0, 5).map(file => file.path);
     }
 
-    // Create alteration request
+    const existingRequests = await AlterationRequest.countDocuments({ userId, boutiqueId });
+    if (existingRequests >= 2) {
+      return res.status(400).json({ message: "Maximum of 2 alteration requests allowed per user for this boutique" });
+    }
+
     const alterationRequest = await AlterationRequest.create({
       userId,
       boutiqueId,
-      altOrderId,
-      alterationType,
-      issueArea,
-      fixType,
+      description,
       referenceImage,
       orderImage,
-      voiceNote: AltvoiceNotes,
+      voiceNote: voiceNotes,
       status: "Pending",
     });
+
+    const mailOptions = {
+      from: 'nihar.neelala124@gmail.com',
+      to: 'needles.personal.2025@gmail.com',
+      subject: 'New Alteration Request Submitted',
+      text: `A new alteration request has been submitted.
+
+Alteration Request ID: ${alterationRequest._id}
+
+User Location: ${user.address?.flatNumber || ""}, ${user.address?.block || ""}, ${user.address?.street || ""}
+Boutique Location: ${boutique.location?.address || ""}`,
+    };
+
+    await transporter.sendMail(mailOptions);
 
     res.status(201).json({
       message: "Alteration request submitted successfully",
@@ -791,10 +720,12 @@ export const submitAlterationRequest = async (req, res) => {
 // 📌 Boutique Reviews Request
 export const reviewAlterationRequest = async (req, res) => {
   try {
-    const { altOrderId } = req.params;
-    const alterationRequest = await AlterationRequest.findOne({ altOrderId });
+    const { requestId } = req.params;
 
-    if (!alterationRequest) return res.status(404).json({ message: "Request not found" });
+    const alterationRequest = await AlterationRequest.findById(requestId);
+    if (!alterationRequest) {
+      return res.status(404).json({ message: "Alteration request not found" });
+    }
 
     alterationRequest.status = "Reviewed";
     await alterationRequest.save();
@@ -805,41 +736,55 @@ export const reviewAlterationRequest = async (req, res) => {
   }
 };
 
+
 // 📌 Open Chat if Needed
 export const respondToAlterationRequest = async (req, res) => {
   try {
-    const { altOrderId } = req.params;
-    const { responseMessage, responseStatus } = req.body; // Response message + status (Accepted, Needs Clarification, Rejected)
+    const { requestId } = req.params;
+    const { responseStatus } = req.body;
 
-    const alterationRequest = await AlterationRequest.findOne({ altOrderId });
+    const alterationRequest = await AlterationRequest.findById(requestId);
+    if (!alterationRequest) {
+      return res.status(404).json({ message: "Alteration request not found" });
+    }
 
-    if (!alterationRequest) return res.status(404).json({ message: "Request not found" });
+    if (!["Reviewed", "In Progress", "Ready for Delivery", "Completed"].includes(responseStatus)) {
+      return res.status(400).json({ message: "Invalid status update" });
+    }
 
-    alterationRequest.response = {
-      message: responseMessage,
-      status: responseStatus,
-      respondedAt: new Date(),
-    };
-    alterationRequest.status = responseStatus; // Update request status
+    alterationRequest.status = responseStatus;
     await alterationRequest.save();
 
-    res.status(200).json({ message: "Response recorded", alterationRequest });
+    res.status(200).json({
+      message: `Alteration request status updated to '${responseStatus}'`,
+      alterationRequest,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error responding to request", error: error.message });
+    res.status(500).json({ message: "Error updating alteration request", error: error.message });
   }
 };
+
+
 
 // 📌 Get All Alteration Requests for a Boutique
 export const getAlterationRequestsForBoutique = async (req, res) => {
   try {
     const { boutiqueId } = req.params;
-    const alterationRequests = await AlterationRequest.find({ boutiqueId });
 
-    res.status(200).json({ message: "Alteration requests fetched", alterationRequests });
+    const alterationRequests = await AlterationRequest.find({ boutiqueId })
+      .populate("userId", "name phone")
+      .exec();
+
+    res.status(200).json({
+      message: "Alteration requests fetched successfully",
+      alterationRequests,
+    });
   } catch (error) {
     res.status(500).json({ message: "Error fetching requests", error: error.message });
   }
 };
+
+
 
 const createBill = async (req, res) => {
   try {
@@ -1228,10 +1173,8 @@ const getCompletedOrders = async (req, res) => {
 export {createBill, processPayment, getBill, getCompletedOrders};
 
 
-export {getUserAlterationOrders};
 
-
-export {requestAlteration, getBoutiqueOrders};
+export {getBoutiqueOrders};
 
 export default sendEmailToAdmin;
 
