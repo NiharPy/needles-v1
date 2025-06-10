@@ -93,19 +93,23 @@ const Boutiquelogin = async function (req, res) {
     // Generate a new OTP
     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
+    // Set OTP expiry duration (e.g., 5 minutes)
+    const OTP_EXPIRATION_TIME = 5; // in minutes
+
     // Update the Boutique with the OTP and expiration time
     Boutique.otp = otp;
-    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // OTP valid for configured minutes
+    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in ms
     await Boutique.save();
 
-    // Send OTP to the phone number
-    await sendOTP(phone, otp);
+    // Twilio logic removed — optionally log OTP for testing
+    console.log(`Generated OTP for ${phone}: ${otp}`);
 
     // Respond with instruction to switch to OTP page
     res.status(200).json({
-      message: "OTP sent to your phone. Please verify to complete login.",
+      message: "OTP generated. Please verify to complete login.",
       switchToOTPPage: true,
       boutiqueUserId: Boutique._id,
+      otp, // ⚠️ Optional: remove this in production
     });
   } catch (error) {
     console.error("Error during login:", error.message);
