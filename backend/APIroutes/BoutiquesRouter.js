@@ -1,7 +1,7 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypesWithDetails, getOrdersByStatus} from '../controllers/boutique-controller.js';
-import authMiddleware from '../utils/auth-user.js';
-import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder, getBoutiqueOrders, getCompletedOrders, generateInvoice} from '../controllers/order-controller.js';
+import authMiddleware from '../utils/auth-boutique.js';
+import { updateOrderStatus, getOrderDetails, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, acceptOrder, declineOrder, getBoutiqueOrders, getCompletedOrders, generateInvoice, getActiveAlterationRequests} from '../controllers/order-controller.js';
 
 import {createBill} from '../controllers/order-controller.js';
 import { upload } from '../utils/cloudinary.js';
@@ -52,6 +52,8 @@ router.route('/:boutiqueId/review-alteration/:requestId').put(reviewAlterationRe
 router.route('/:boutiqueId/alteration/respond').put(respondToAlterationRequest);
 
 router.route('/:boutiqueId/alterations').get(getAlterationRequestsForBoutique);
+
+router.route('/:boutiqueId/alterations/active').get(getActiveAlterationRequests);
 
 router.route("/:boutiqueId/createBill").post(createBill);
 

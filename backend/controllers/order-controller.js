@@ -737,6 +737,22 @@ export const reviewAlterationRequest = async (req, res) => {
 };
 
 
+export const getActiveAlterationRequests = async (req, res) => {
+  try {
+    // Find alteration requests with status NOT "Pending" or "Completed"
+    const activeRequests = await AlterationRequest.find({
+      status: { $nin: ["Pending", "Completed"] },
+    })
+      .populate("userId", "name email") // Optional: populate user details
+      .populate("boutiqueId", "name email"); // Optional: populate boutique details
+
+    res.status(200).json({ requests: activeRequests });
+  } catch (error) {
+    console.error("Error fetching active alteration requests:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+};
+
 // 📌 Open Chat if Needed
 export const respondToAlterationRequest = async (req, res) => {
   try {

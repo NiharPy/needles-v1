@@ -158,11 +158,11 @@ const verifyOtpFB = async (req, res) => {
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
-    // Generate JWTs
+    // Generate JWT tokens
     const accessToken = jwt.sign(
       { userId: user._id, name: user.name },
       process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: "30d" }
+      { expiresIn: "15m" } // Access tokens should expire quickly
     );
 
     const refreshToken = jwt.sign(
@@ -171,18 +171,18 @@ const verifyOtpFB = async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    // Save refresh token and clear OTP data
+    // Save refresh token and clear OTP info
     user.refreshToken = refreshToken;
     user.otp = null;
     user.otpExpiry = null;
     await user.save();
 
-    // Set access token as HTTP-only cookie
+    // Set access token in HTTP-only cookie
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: false, // Not depending on NODE_ENV
+      secure: false,
       sameSite: "strict",
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     res.status(200).json({
@@ -194,6 +194,7 @@ const verifyOtpFB = async (req, res) => {
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
+
 
 const boutiqueSearch = async function (req, res) {
   try {
