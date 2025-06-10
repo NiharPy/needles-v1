@@ -47,9 +47,9 @@ router.post(
 
 router.route("/:boutiqueId/delete-dressType").delete(deleteDressType);
 
-router.route('/:boutiqueId/alteration/review/:altOrderId').put(reviewAlterationRequest);
+router.route('/:boutiqueId/review-alteration/:requestId').put(reviewAlterationRequest);
 
-router.route('/:boutiqueId/alteration/respond/:altOrderId').put(respondToAlterationRequest);
+router.route('/:boutiqueId/alteration/respond').put(respondToAlterationRequest);
 
 router.route('/:boutiqueId/alterations').get(getAlterationRequestsForBoutique);
 
