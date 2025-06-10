@@ -1,7 +1,7 @@
 // auth-boutique.js
 
 import jwt from 'jsonwebtoken';
-import BoutiqueModel from '../models/boutiqueschema.js';
+import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import BlacklistedToken from '../models/BlacklistedToken.js';
 
 const authMiddleware = async (req, res, next) => {
