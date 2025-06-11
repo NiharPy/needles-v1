@@ -190,7 +190,7 @@ const verifyOtpFB = async (req, res) => {
       httpOnly: true,
       secure: true, // 🛡️ Use HTTPS only
       sameSite: 'None',
-      domain : '.onrender.com',
+      domain : 'needles-v1.onrender.com',
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
@@ -199,7 +199,7 @@ const verifyOtpFB = async (req, res) => {
       httpOnly: true,
       secure: true, // 🛡️ Use HTTPS only
       sameSite: 'None',
-      domain : '.onrender.com',
+      domain : 'needles-v1.onrender.com',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
