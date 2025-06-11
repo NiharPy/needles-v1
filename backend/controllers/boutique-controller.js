@@ -151,22 +151,22 @@ const verifyOtpFB = async (req, res) => {
 
     const user = await BoutiqueModel.findOne({ phone });
     if (!user) {
-      return res.status(404).json({ message: "Boutique Account not found." });
+      return res.status(404).json({ message: "Boutique account not found." });
     }
 
-    if (Date.now() > user.otpExpiry) {
-      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    if (!user.otp || !user.otpExpiry || Date.now() > user.otpExpiry) {
+      return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
     if (otp !== user.otp) {
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
-    // Generate JWT tokens
+    // 🔐 Generate JWT tokens
     const accessToken = jwt.sign(
-      { userId: user._id, name: user.name },
+      { userId: user._id, name: user.name, role: user.role },
       process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: "15m" } // Access tokens should expire quickly
+      { expiresIn: "15m" }
     );
 
     const refreshToken = jwt.sign(
@@ -175,27 +175,39 @@ const verifyOtpFB = async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    // Save refresh token and clear OTP info
+    // 💾 Save refresh token and clear OTP
     user.refreshToken = refreshToken;
     user.otp = null;
     user.otpExpiry = null;
     await user.save();
 
-    // Set access token in HTTP-only cookie
+    // 🍪 Send accessToken cookie (HTTP-only, secure)
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: false,
-      sameSite: "strict",
+      secure: true, // 🛡️ Use HTTPS only
+      sameSite: "Strict",
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
+    // 🍪 Send refreshToken cookie (HTTP-only, secure)
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true, // 🛡️ Use HTTPS only
+      sameSite: "Strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     res.status(200).json({
-      message: "User authenticated successfully.",
-      refreshToken,
+      message: "OTP verified. User logged in.",
+      user: {
+        _id: user._id,
+        name: user.name,
+        role: user.role,
+      },
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
-    res.status(500).json({ message: "Server error. Please try again." });
+    res.status(500).json({ message: "Internal server error." });
   }
 };
 

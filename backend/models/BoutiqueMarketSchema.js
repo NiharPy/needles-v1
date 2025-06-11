@@ -8,6 +8,11 @@ const boutiqueSchema = new mongoose.Schema({
   // 🔐 OTP and auth fields
   otp: { type: String, default: '' },
 
+  refreshToken: {
+    type: String,
+    default: null,
+  },
+
   phone: {
     type: String,
     required: true,
