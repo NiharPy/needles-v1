@@ -3,7 +3,6 @@ import OrderModel from "../models/OrderSchema.js";
 import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
-const OTP_EXPIRATION_TIME = 5
 import { v2 as cloudinary } from 'cloudinary';
 import { getEmbedding } from '../utils/embedding.js';
 cloudinary.config({
@@ -93,12 +92,12 @@ const Boutiquelogin = async function (req, res) {
     // Generate a new OTP
     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
-    // Set OTP expiry duration (e.g., 5 minutes)
-    const OTP_EXPIRATION_TIME = 5; // in minutes
+    // Set OTP expiry duration (1 minute)
+    const OTP_EXPIRATION_TIME = 1; // in minutes
 
     // Update the Boutique with the OTP and expiration time
     Boutique.otp = otp;
-    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in ms
+    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in milliseconds
     await Boutique.save();
 
     // Twilio logic removed — optionally log OTP for testing
@@ -118,6 +117,7 @@ const Boutiquelogin = async function (req, res) {
     res.status(500).json({ message: "An unexpected error occurred during login." });
   }
 };
+
 
 
 const boutiquesData = async function (req, res) {
@@ -150,11 +150,12 @@ const verifyOtpFB = async (req, res) => {
     }
 
     const user = await BoutiqueModel.findOne({ phone });
+    console.log("user : ", user.otp);
     if (!user) {
       return res.status(404).json({ message: "Boutique account not found." });
     }
 
-    if (!user.otp || !user.otpExpiry || Date.now() > user.otpExpiry) {
+    if (!user.otp) { //for later otp expiration || Date.now() > user.otpExpiry || !user.otpExpiry check otp expiry
       return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
@@ -168,6 +169,8 @@ const verifyOtpFB = async (req, res) => {
       process.env.ACCESS_TOKEN_SECRET,
       { expiresIn: "15m" }
     );
+
+    console.log(`'access token : `, accessToken);
 
     const refreshToken = jwt.sign(
       { userId: user._id },

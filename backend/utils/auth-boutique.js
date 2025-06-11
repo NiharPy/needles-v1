@@ -8,11 +8,13 @@ import { generateAccessToken } from "../utils/token.js";
 // Middleware for protected routes
 const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
+  console.log("ts is auth header: ", authHeader);
   if (!authHeader?.startsWith("Bearer ")) {
     return res.status(401).json({ message: "Access token missing or invalid." });
   }
 
   const token = authHeader.split(" ")[1];
+  console.log("ts is token: ", token);
 
   const blacklisted = await BlacklistedToken.findOne({ token });
   if (blacklisted) {
