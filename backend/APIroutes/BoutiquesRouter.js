@@ -49,7 +49,7 @@ router.route('/alteration/respond').patch(authMiddleware,respondToAlterationRequ
 
 router.route('/alterations').get(authMiddleware,getAlterationRequestsForBoutique);
 
-router.route('alterations/active').get(authMiddleware,getActiveAlterationRequests);
+router.route('/alterations/active').get(authMiddleware,getActiveAlterationRequests);
 
 router.route("/createBill").post(authMiddleware,createBill);
 
