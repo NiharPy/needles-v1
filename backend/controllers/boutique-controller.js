@@ -210,6 +210,7 @@ const verifyOtpFB = async (req, res) => {
         name: user.name,
         role: user.role,
       },
+      accessToken,
     });
   } catch (error) {
     console.error("Error verifying OTP:", error);
