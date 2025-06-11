@@ -187,16 +187,14 @@ const verifyOtpFB = async (req, res) => {
     // 🍪 Send accessToken cookie (HTTP-only, secure)
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: true, // 🛡️ Use HTTPS only
-      sameSite: "Strict",
+      secure: false, // 🛡️ Use HTTPS only
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
     // 🍪 Send refreshToken cookie (HTTP-only, secure)
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: true, // 🛡️ Use HTTPS only
-      sameSite: "Strict",
+      secure: false, // 🛡️ Use HTTPS only
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
