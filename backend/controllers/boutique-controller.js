@@ -1,4 +1,5 @@
 import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
+import mongoose from 'mongoose';
 import OrderModel from "../models/OrderSchema.js";
 import UserModel from "../models/userschema.js";
 import jwt from "jsonwebtoken";
@@ -188,7 +189,7 @@ const verifyOtpFB = async (req, res) => {
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
       secure: false, // 🛡️ Use HTTPS only
-      sameSite: 'None',
+      sameSite: 'Lax',
       maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
@@ -196,7 +197,7 @@ const verifyOtpFB = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: false, // 🛡️ Use HTTPS only
-      sameSite: 'None',
+      sameSite: 'Lax',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
@@ -348,7 +349,8 @@ const viewBoutiqueDetails = async (req, res) => {
 
 const addItemToCatalogue = async (req, res) => {
   try {
-    const { boutiqueId, newItems } = req.body;
+    const { newItems } = req.body;
+    const boutiqueId = req.boutiqueId;
 
     // Validate input
     if (!boutiqueId || !newItems || !Array.isArray(newItems)) {
@@ -383,7 +385,7 @@ const addItemToCatalogue = async (req, res) => {
     res.status(200).json({
       message: "Items added to the catalogue successfully.",
       updatedCatalogue: boutique.catalogue,
-    })
+    });
   } catch (error) {
     console.error("Error adding items to catalogue:", error);
     res.status(500).json({ message: "Server error. Please try again." });
@@ -391,9 +393,10 @@ const addItemToCatalogue = async (req, res) => {
 };
 
 
+
 const getBoutiqueCatalogue = async (req, res) => {
   try {
-    const { boutiqueId } = req.params;
+    const boutiqueId = req.boutiqueId; // ⬅️ Use injected boutique ID from middleware
 
     // Find boutique by ID and exclude _id from catalogue items
     const boutique = await BoutiqueModel.findById(boutiqueId).select("name catalogue -_id");
@@ -417,9 +420,11 @@ const getBoutiqueCatalogue = async (req, res) => {
 };
 
 
+
 const deleteItemFromCatalogue = async (req, res) => {
   try {
-    const { boutiqueId, itemNames } = req.body;
+    const { itemNames } = req.body;
+    const boutiqueId = req.boutiqueId; // ✅ Use boutiqueId from the request
 
     // Validate input
     if (!boutiqueId || !itemNames || !Array.isArray(itemNames)) {
@@ -456,6 +461,7 @@ const deleteItemFromCatalogue = async (req, res) => {
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
+
 
 
 const getRecommendedBoutiques = async (req, res) => {
@@ -529,7 +535,8 @@ const getRecommendedBoutiquesByDressType = async (req, res) => {
 
 const addDressType = async (req, res) => {
   try {
-    const { boutiqueId, dressType, measurementRequirements } = req.body;
+    const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
+    const { dressType, measurementRequirements } = req.body;
 
     if (!boutiqueId || !dressType) {
       return res.status(400).json({ message: 'boutiqueId and dressType are required' });
@@ -567,8 +574,10 @@ const addDressType = async (req, res) => {
 
 
 
+
 const deleteDressType = async (req, res) => {
-  const { boutiqueId, dressType } = req.body;
+  const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
+  const { dressType } = req.body;
 
   try {
     const boutique = await BoutiqueModel.findById(boutiqueId);
@@ -584,6 +593,7 @@ const deleteDressType = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 
 
@@ -661,7 +671,7 @@ const trackBusiness = async (req, res) => {
 };
 
 const getDressTypesWithDetails = async (req, res) => {
-  const { boutiqueId } = req.params;
+  const boutiqueId = req.boutiqueId; // ⬅️ Use decoded ID from auth middleware
 
   try {
     // ✅ Find the boutique
@@ -689,7 +699,8 @@ export { getDressTypesWithDetails};
 
 const getOrdersByStatus = async (req, res) => {
   try {
-    const { boutiqueId, userId, status } = req.query;
+    const boutiqueId = req.boutiqueId; // Extracted from middleware
+    const { userId, status } = req.query;
 
     // ✅ Validate ObjectId if provided
     if (boutiqueId && !mongoose.Types.ObjectId.isValid(boutiqueId)) {
@@ -735,6 +746,7 @@ const getOrdersByStatus = async (req, res) => {
     res.status(500).json({ error: "Server error", details: error.message });
   }
 };
+
 
 export {getOrdersByStatus};
 export {trackBusiness};

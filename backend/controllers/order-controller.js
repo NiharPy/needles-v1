@@ -235,139 +235,11 @@ const cancelOrder = async (req, res) => {
 
 
 
-const acceptOrder = async (req, res) => {
-  try {
-    const { orderId } = req.params;
-
-    if (!orderId) {
-      return res.status(400).json({ message: "Order ID is required" });
-    }
-
-    // Find the order and populate user and boutique details
-    const order = await OrderModel.findById(orderId)
-      .populate("userId", "name phone address orders")
-      .populate("boutiqueId", "name location orders");
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    const boutique = order.boutiqueId;
-    const user = order.userId;
-
-    // Debugging: log the boutique and user objects
-    console.log("Boutique:", boutique);
-    console.log("User:", user);
-
-    if (!boutique || !user) {
-      return res.status(400).json({ message: "Order is missing required user or boutique details" });
-    }
-
-    // Initialize orders array if it's missing or undefined
-    if (!boutique.orders) boutique.orders = [];
-    if (!user.orders) user.orders = [];
-
-    // Change order status to "Accepted"
-    order.status = "Accepted";
-    await order.save();
-
-    // Update status in boutique orders
-    const boutiqueOrder = boutique.orders.find(o => o.orderId && o.orderId.toString() === orderId);
-    if (boutiqueOrder) {
-      boutiqueOrder.status = "Accepted";
-      await boutique.save();
-    } else {
-      console.error("No matching orderId found in boutique orders");
-    }
-
-    // Update status in user orders
-    const userOrder = user.orders.find(o => o.orderId && o.orderId.toString() === orderId);
-    if (userOrder) {
-      userOrder.status = "Accepted";
-      await user.save();
-    } else {
-      console.error("No matching orderId found in user orders");
-    }
-
-    // Send SMS to user
-    const smsText = `Hi ${user.name}, your order has been accepted by ${boutique.name}!🎉 Order ID: ${order._id}. Check Needles for details.`;
-
-    await client.messages.create({
-      body: smsText,
-      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      to: user.phone,
-    });
-
-    res.status(200).json({
-      message: "Order status updated to 'Accepted' successfully",
-      status: "Accepted",
-    });
-  } catch (error) {
-    console.error("Error accepting order:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-const scheduleOrderCancellation = async (orderId) => {
-  setTimeout(async () => {
-    try {
-      const order = await OrderModel.findById(orderId)
-        .populate("userId", "orders phone")
-        .populate("boutiqueId", "orders");
-
-      if (!order) {
-        console.log(`Order ${orderId} already deleted or does not exist.`);
-        return;
-      }
-
-      if (order.status !== "Pending") {
-        console.log(`Order ${orderId} is no longer pending. No action taken.`);
-        return;
-      }
-
-      const user = order.userId;
-      const boutique = order.boutiqueId;
-
-      // Remove order from boutique's orders array
-      if (boutique && boutique.orders) {
-        boutique.orders = boutique.orders.filter(
-          (o) => o.orderId.toString() !== orderId.toString()
-        );
-        await boutique.save();
-      }
-
-      // Remove order from user's orders array
-      if (user && user.orders) {
-        user.orders = user.orders.filter(
-          (o) => o.orderId.toString() !== orderId.toString()
-        );
-        await user.save();
-      }
-
-      // Delete the order from the database
-      await OrderModel.findByIdAndDelete(orderId);
-      console.log(`Order ${orderId} deleted due to no response.`);
-
-      // Send SMS to user
-      if (user && user.phone) {
-        const smsText = `Your order was not accepted within 5 minutes and has been cancelled automatically. Please try another boutique.`;
-        await client.messages.create({
-          body: smsText,
-          from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-          to: user.phone,
-        });
-      }
-    } catch (error) {
-      console.error(`Error deleting order ${orderId}:`, error);
-    }
-  }, 5 * 60 * 1000); // 5-minute timeout
-};
-
-
 const declineOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
+    const boutiqueId = req.boutiqueId;
 
     if (status !== 'Declined') {
       return res.status(400).json({ message: 'Invalid request. Only "Declined" status is allowed here.' });
@@ -379,12 +251,12 @@ const declineOrder = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Check if boutique exists
-    if (!order.boutiqueId) {
-      return res.status(400).json({ message: 'Boutique not found in the order' });
+    // Check if boutique exists and matches the authenticated boutique
+    if (!order.boutiqueId || order.boutiqueId._id.toString() !== boutiqueId.toString()) {
+      return res.status(400).json({ message: 'Boutique not found in the order or unauthorized.' });
     }
 
-    const boutique = await BoutiqueModel.findById(order.boutiqueId);
+    const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
@@ -412,11 +284,11 @@ const declineOrder = async (req, res) => {
 
     // Send SMS notification
     const smsText = `Your order has been declined by ${order.boutiqueId.name}. Order ID: ${order._id}. Please open Needles for details.`;
-    
+
     await client.messages.create({
       body: smsText,
       from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      to: userPhoneNumber, // Ensure phoneNumber is stored in the User schema
+      to: userPhoneNumber,
     });
 
     res.status(200).json({
@@ -428,6 +300,7 @@ const declineOrder = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 const viewOrders = async (req, res) => {
   try {
@@ -467,6 +340,7 @@ const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
+    const boutiqueId = req.boutiqueId; // Injected from JWT via middleware
 
     const validStatuses = ['Pending', 'In Progress', 'Ready for Delivery'];
 
@@ -474,16 +348,20 @@ const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
 
-    const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
+    const order = await OrderModel.findById(orderId)
+      .populate('userId')
+      .populate('boutiqueId');
+
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    if (!order.boutiqueId) {
-      return res.status(400).json({ message: 'Boutique not found in the order' });
+    // Validate that the boutique making the request owns this order
+    if (order.boutiqueId?._id?.toString() !== boutiqueId) {
+      return res.status(403).json({ message: 'Unauthorized boutique access to this order' });
     }
 
-    const boutique = await BoutiqueModel.findById(order.boutiqueId._id);
+    const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
@@ -537,6 +415,7 @@ const updateOrderStatus = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
@@ -721,8 +600,13 @@ Boutique Location: ${boutique.location?.address || ""}`,
 export const reviewAlterationRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
+    const boutiqueId = req.boutiqueId;
 
-    const alterationRequest = await AlterationRequest.findById(requestId);
+    const alterationRequest = await AlterationRequest.findOne({
+      _id: requestId,
+      boutiqueId,
+    });
+
     if (!alterationRequest) {
       return res.status(404).json({ message: "Alteration request not found" });
     }
@@ -739,8 +623,11 @@ export const reviewAlterationRequest = async (req, res) => {
 
 export const getActiveAlterationRequests = async (req, res) => {
   try {
+    const boutiqueId = req.boutiqueId;
+
     // Find alteration requests with status NOT "Pending" or "Completed"
     const activeRequests = await AlterationRequest.find({
+      boutiqueId,
       status: { $nin: ["Pending", "Completed"] },
     })
       .populate("userId", "name email") // Optional: populate user details
@@ -758,8 +645,9 @@ export const respondToAlterationRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
     const { responseStatus } = req.body;
+    const boutiqueId = req.boutiqueId;
 
-    const alterationRequest = await AlterationRequest.findById(requestId);
+    const alterationRequest = await AlterationRequest.findOne({ _id: requestId, boutiqueId });
     if (!alterationRequest) {
       return res.status(404).json({ message: "Alteration request not found" });
     }
@@ -782,10 +670,11 @@ export const respondToAlterationRequest = async (req, res) => {
 
 
 
+
 // 📌 Get All Alteration Requests for a Boutique
 export const getAlterationRequestsForBoutique = async (req, res) => {
   try {
-    const { boutiqueId } = req.params;
+    const boutiqueId = req.boutiqueId;
 
     const alterationRequests = await AlterationRequest.find({ boutiqueId })
       .populate("userId", "name phone")
@@ -804,7 +693,8 @@ export const getAlterationRequestsForBoutique = async (req, res) => {
 
 const createBill = async (req, res) => {
   try {
-    const { boutiqueId, orderId, selectedItems, additionalCost } = req.body;
+    const { orderId, selectedItems, additionalCost } = req.body;
+    const boutiqueId = req.user.userId; // ⬅️ Extracted securely from JWT
 
     // ✅ Validate MongoDB ObjectIds
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
@@ -1040,88 +930,10 @@ const viewBill = async (req, res) => {
   }
 };
 
-const generateInvoice = async (req, res) => {
-  try {
-    const { boutiqueId, orderId } = req.params; // Get boutiqueId and orderId from request parameters
-
-    // Find the order and populate boutique details
-    const order = await OrderModel.findById(orderId)
-      .populate("boutiqueId", "name")
-      .select("bill _id boutiqueId status customerName");
-
-    // Check if the order exists
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    // Check if the bill exists and has a total amount
-    if (!order.bill || !order.bill.totalAmount) {
-      return res.status(400).json({ message: "Bill not available for this order" });
-    }
-
-    // Create a PDF document
-    const filename = `invoice-${order._id}.pdf`;
-    const filepath = `./tmp/${filename}`;
-
-    // Ensure the directory exists
-    if (!fs.existsSync('./tmp')) {
-      fs.mkdirSync('./tmp');
-    }
-
-    const doc = new PDFDocument();
-    doc.pipe(createWriteStream(filepath));
-
-    // Set up the invoice content
-    doc.fontSize(18).text("Tax Invoice", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(10).text(`Order ID: ${order._id}`);
-    doc.text(`Boutique: ${order.boutiqueId.name}`);
-    doc.text(`Customer: ${order.customerName}`);
-    doc.text(`Status: ${order.status}`);
-    doc.moveDown();
-
-    doc.text("Items:");
-    order.bill.items.forEach((item) => {
-      doc.text(`${item.name}: ₹${item.amount}`);
-    });
-
-    doc.text(`Platform Fee: ₹${order.bill.platformFee}`);
-    doc.text(`Delivery Fee: ₹${order.bill.deliveryFee}`);
-    doc.text(`Additional Cost: ₹${order.bill.additionalCost}`);
-    doc.text(`Total Amount: ₹${order.bill.totalAmount}`);
-
-    // Finalize the PDF document
-    doc.end();
-
-    await new Promise((resolve) => doc.on('finish', resolve));
-
-    // Upload the PDF to Cloudinary
-    const result = await cloudinary.uploader.upload(filepath, {
-      resource_type: 'raw',
-      folder: 'invoices',
-      use_filename: true,
-      unique_filename: false,
-      overwrite: true,
-    });
-
-    // Clean up local file
-    unlinkSync(filepath);
-
-    // Respond with the Cloudinary URL
-    res.status(200).json({
-      message: "Invoice generated successfully",
-      invoiceUrl: result.secure_url,
-    });
-    
-  } catch (error) {
-    console.error("Error generating invoice:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
 
 const getBoutiqueOrders = async (req, res) => {
   try {
-    const { boutiqueId } = req.params;
+    const boutiqueId = req.user.userId; // 🔄 Extracted from JWT token via middleware
 
     // Find boutique and populate orders
     const boutique = await BoutiqueModel.findById(boutiqueId).populate({
@@ -1163,9 +975,15 @@ const getBoutiqueOrders = async (req, res) => {
   }
 };
 
+
 const getCompletedOrders = async (req, res) => {
   try {
-    const completedOrders = await OrderModel.find({ status: "Completed" })
+    const boutiqueId = req.boutiqueId;
+
+    const completedOrders = await OrderModel.find({ 
+        status: "Completed", 
+        boutiqueId 
+      })
       .populate("userId", "name email phone") // Populate user details
       .populate("boutiqueId", "name location") // Populate boutique details
       .sort({ updatedAt: -1 }); // Sort by latest completed orders
@@ -1186,6 +1004,7 @@ const getCompletedOrders = async (req, res) => {
 
 
 
+
 export {createBill, processPayment, getBill, getCompletedOrders};
 
 
@@ -1198,5 +1017,5 @@ export default sendEmailToAdmin;
 export { rateOrder };
 
 export {getOrderDetails};
-export {placeOrder, generateInvoice};
-export {updateOrderStatus, acceptOrder, declineOrder, viewOrders, viewBill, cancelOrder};
+export {placeOrder};
+export {updateOrderStatus, declineOrder, viewOrders, viewBill, cancelOrder};
