@@ -239,67 +239,65 @@ const declineOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
-    const boutiqueId = req.boutiqueId;
 
+    const boutiqueId = req.boutiqueId; // ✅ Injected by authMiddleware
+
+    // ✅ Only "Declined" status is allowed here
     if (status !== 'Declined') {
       return res.status(400).json({ message: 'Invalid request. Only "Declined" status is allowed here.' });
     }
 
-    // Find the order
-    const order = await OrderModel.findById(orderId).populate('userId').populate('boutiqueId');
+    // ✅ Find the order with boutique and user populated
+    const order = await OrderModel.findById(orderId)
+      .populate('userId')
+      .populate('boutiqueId');
+
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Check if boutique exists and matches the authenticated boutique
+    // ✅ Ensure the order belongs to the authenticated boutique
     if (!order.boutiqueId || order.boutiqueId._id.toString() !== boutiqueId.toString()) {
       return res.status(400).json({ message: 'Boutique not found in the order or unauthorized.' });
     }
 
+    // ✅ Ensure boutique exists
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    // Update order status to Declined
+    // ✅ Update order status
     order.status = 'Declined';
     await order.save();
 
-    // Update Boutique orders
-    const boutiqueOrder = boutique.orders.find((o) => o.orderId.toString() === orderId.toString());
+    // ✅ Update boutique's internal order list
+    const boutiqueOrder = boutique.orders.find(o => o.orderId.toString() === orderId.toString());
     if (boutiqueOrder) {
       boutiqueOrder.status = 'Declined';
       await boutique.save();
     }
 
-    // Update User orders
+    // ✅ Update user's internal order list
     const user = await UserModel.findById(order.userId);
-    const userOrder = user.orders.find((o) => o.orderId.toString() === orderId.toString());
+    const userOrder = user.orders.find(o => o.orderId.toString() === orderId.toString());
     if (userOrder) {
       userOrder.status = 'Declined';
       await user.save();
     }
 
-    const userPhoneNumber = user.phone;
-
-    // Send SMS notification
-    const smsText = `Your order has been declined by ${order.boutiqueId.name}. Order ID: ${order._id}. Please open Needles for details.`;
-
-    await client.messages.create({
-      body: smsText,
-      from: process.env.TWILIO_MESSAGING_SERVICE_SID,
-      to: userPhoneNumber,
-    });
-
+    // ✅ Response without SMS logic
     res.status(200).json({
-      message: 'Order declined successfully, and SMS notification sent',
+      message: 'Order declined successfully.',
       status: 'Declined',
     });
+
   } catch (error) {
     console.error('Error declining order:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 const viewOrders = async (req, res) => {
