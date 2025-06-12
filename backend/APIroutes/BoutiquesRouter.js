@@ -34,7 +34,7 @@ router.route('/order-completed').get(authMiddleware,getCompletedOrders);
 
 router.route('/order/:orderId/status').post(authMiddleware,updateOrderStatus);
 
-router.route("/order/:orderId/decline").delete(authMiddleware, declineOrder);
+router.route("/order/:orderId/decline").post(authMiddleware, declineOrder);
 
 router.route("/catalogue").get(authMiddleware,getBoutiqueCatalogue);
 
