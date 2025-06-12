@@ -2,7 +2,7 @@ import express from 'express';
 import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypesWithDetails, getOrdersByStatus, addHeaderImage, deleteHeaderImage, updateBoutiqueDetails} from '../controllers/boutique-controller.js';
 import { changePassword, requestPhoneNumberChange, confirmPhoneNumberChange, logoutBoutique , deleteAllHeaderImages} from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-boutique.js';
-import { updateOrderStatus, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, declineOrder, getBoutiqueOrders, getCompletedOrders, getActiveAlterationRequests} from '../controllers/order-controller.js';
+import { updateOrderStatus, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, getBoutiqueOrders, getCompletedOrders, getActiveAlterationRequests} from '../controllers/order-controller.js';
 
 import {createBill} from '../controllers/order-controller.js';
 import { upload } from '../utils/cloudinary.js';
@@ -33,8 +33,6 @@ router.route('/order').get(authMiddleware,getBoutiqueOrders);
 router.route('/order-completed').get(authMiddleware,getCompletedOrders);
 
 router.route('/order/:orderId/status').post(authMiddleware,updateOrderStatus);
-
-router.route("/order/decline").post(authMiddleware, declineOrder);
 
 router.route("/catalogue").get(authMiddleware,getBoutiqueCatalogue);
 

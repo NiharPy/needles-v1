@@ -234,53 +234,6 @@ const cancelOrder = async (req, res) => {
 };
 
 
-
-
-const declineOrder = async (req, res) => {
-  try {
-    const { orderId } = req.body;
-    const boutiqueId = req.boutiqueId; // set by authMiddleware
-
-    // 🔍 Validate input
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ message: "Invalid orderId" });
-    }
-
-    // 🔍 Find order
-    const order = await OrderModel.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    // 🛡️ Validate boutique ownership
-    if (order.boutiqueId.toString() !== boutiqueId.toString()) {
-      return res.status(403).json({ message: "Unauthorized. This order does not belong to your boutique." });
-    }
-
-    // 🛠️ Update order status
-    order.status = "Declined";
-    await order.save();
-
-    // 🛠️ Update boutique.orders array status
-    await BoutiqueModel.updateOne(
-      { _id: boutiqueId, "orders.orderId": orderId },
-      { $set: { "orders.$.status": "Declined" } }
-    );
-
-    return res.status(200).json({
-      message: "Order declined successfully.",
-      orderId: order._id,
-      status: "Declined",
-    });
-  } catch (error) {
-    console.error("❌ Error declining order:", error);
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
 const viewOrders = async (req, res) => {
   try {
     const { userId } = req.params; // Get the user ID from request parameters
@@ -319,9 +272,9 @@ const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
-    const boutiqueId = req.boutiqueId; // Injected from JWT via middleware
+    const boutiqueId = req.boutiqueId; // From authMiddleware
 
-    const validStatuses = ['Pending', 'In Progress', 'Ready for Delivery'];
+    const validStatuses = ['Pending', 'In Progress', 'Ready for Delivery', 'Declined'];
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
@@ -349,7 +302,7 @@ const updateOrderStatus = async (req, res) => {
     order.status = status;
     await order.save();
 
-    // ✅ Update boutique embedded order status
+    // ✅ Update boutique.orders[] embedded status
     const boutiqueOrder = boutique.orders.find(
       (o) => o?.orderId?.toString() === orderId.toString()
     );
@@ -358,9 +311,9 @@ const updateOrderStatus = async (req, res) => {
       await boutique.save();
     }
 
-    // ✅ Update user embedded order status
+    // ✅ Update user.orders[] embedded status
     const user = await UserModel.findById(order.userId._id);
-    if (user && user.orders && Array.isArray(user.orders)) {
+    if (user && Array.isArray(user.orders)) {
       const userOrder = user.orders.find(
         (o) => o?.orderId?.toString() === orderId.toString()
       );
@@ -370,23 +323,28 @@ const updateOrderStatus = async (req, res) => {
       }
     }
 
-    // ✅ Optional: Email notification if status is "Ready for Delivery"
+    // 📧 Optional email notification if marked Ready for Delivery
     if (status === 'Ready for Delivery') {
       const userLocation = order.userId?.address || 'Not Provided';
       const boutiqueLocation = order.boutiqueId?.location?.address || 'Not Provided';
-      const orderID = order._id;
 
       const emailText = `
         A Boutique is ready to deliver an order:
         - User Location: ${userLocation}
         - Boutique Location: ${boutiqueLocation}
-        - Order ID: ${orderID}
+        - Order ID: ${order._id}
       `;
       await sendEmailToAdmin('Ready for Delivery', emailText);
     }
 
+    // 🛑 Optional: You can customize declining logic here
+    if (status === 'Declined') {
+      // Example: send notification or log reason
+      console.log(`Order ${orderId} was declined by boutique ${boutiqueId}`);
+    }
+
     res.status(200).json({
-      message: 'Order status updated successfully',
+      message: `Order status updated to '${status}' successfully`,
       status,
     });
   } catch (error) {
@@ -394,6 +352,7 @@ const updateOrderStatus = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
@@ -1039,4 +998,4 @@ export { rateOrder };
 
 export {getOrderDetails};
 export {placeOrder};
-export {updateOrderStatus, declineOrder, viewOrders, viewBill, cancelOrder};
+export {updateOrderStatus, viewOrders, viewBill, cancelOrder};
