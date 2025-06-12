@@ -29,6 +29,8 @@ const boutiqueSchema = new mongoose.Schema({
     longitude: { type: Number },
   },
 
+  area: { type: String },
+
   // 🖼️ Header image for boutique profile
   headerImage: {
     type: [String], // Array of Cloudinary image URLs

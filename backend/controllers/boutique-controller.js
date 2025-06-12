@@ -111,6 +111,30 @@ export const addHeaderImage = async (req, res) => {
 };
 
 
+export const deleteAllHeaderImages = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId;
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    // Clear the headerImage array
+    boutique.headerImage = [];
+    await boutique.save();
+
+    res.status(200).json({
+      message: "All header images deleted successfully",
+      headerImage: boutique.headerImage,
+    });
+  } catch (error) {
+    console.error("Error deleting all header images:", error.message);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
 
 export const deleteHeaderImage = async (req, res) => {
   try {
@@ -147,19 +171,22 @@ export const deleteHeaderImage = async (req, res) => {
 export const updateBoutiqueDetails = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId; // Auth middleware injects this
-    const { name, location } = req.body;
+    const { name, location, area } = req.body;
 
-    // Validate boutique ID format
+    // ✅ Validate boutique ID
     if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
       return res.status(400).json({ message: "Invalid boutique ID" });
     }
 
     const updateFields = {};
 
-    // Update name if provided
+    // ✅ Update name
     if (name) updateFields.name = name;
 
-    // Update location fields if provided
+    // ✅ Update area
+    if (area) updateFields.area = area;
+
+    // ✅ Update location subfields
     if (location) {
       if (location.address) updateFields['location.address'] = location.address;
       if (location.city) updateFields['location.city'] = location.city;
@@ -168,11 +195,12 @@ export const updateBoutiqueDetails = async (req, res) => {
       if (location.longitude) updateFields['location.longitude'] = location.longitude;
     }
 
-    // If nothing to update
+    // ⛔ No fields to update
     if (Object.keys(updateFields).length === 0) {
       return res.status(400).json({ message: "No valid fields provided to update" });
     }
 
+    // ✅ Update in DB
     const updatedBoutique = await BoutiqueModel.findByIdAndUpdate(
       boutiqueId,
       { $set: updateFields },
@@ -187,11 +215,13 @@ export const updateBoutiqueDetails = async (req, res) => {
       message: "Boutique details updated successfully",
       boutique: updatedBoutique,
     });
+
   } catch (error) {
     console.error("Error updating boutique:", error.message);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export const requestPhoneNumberChange = async (req, res) => {
   try {
@@ -458,16 +488,16 @@ const boutiqueSearch = async function (req, res) {
       return res.status(400).json({ message: 'Query is required for semantic search' });
     }
 
-    // 🔍 Parse rating and location
+    // 🔍 Parse rating and area from query
     const ratingMatch = query.match(/(\d(\.\d)?)(\s?stars?|\s?star\s?rating)/i);
-    const locationMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
+    const areaMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
 
     const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
-    const locationValue = locationMatch ? locationMatch[1].trim() : null;
+    const areaValue = areaMatch ? areaMatch[1].trim() : null;
 
     console.log("Semantic Search Debug → Query:", query);
     console.log("Parsed Rating:", ratingValue);
-    console.log("Parsed Location:", locationValue);
+    console.log("Parsed Area:", areaValue);
 
     // 🔹 Get embedding vector
     const queryVector = await getEmbedding(query);
@@ -477,8 +507,6 @@ const boutiqueSearch = async function (req, res) {
         message: 'Failed to generate valid query vector for semantic search.',
       });
     }
-
-    console.log("Query vector length:", queryVector.length);
 
     // 🔹 Build $search pipeline
     const pipeline = [
@@ -501,10 +529,10 @@ const boutiqueSearch = async function (req, res) {
           }]
         : []),
 
-      ...(locationValue
+      ...(areaValue
         ? [{
             $match: {
-              "location.address": { $regex: locationValue, $options: 'i' }
+              area: { $regex: areaValue, $options: 'i' }
             }
           }]
         : []),
@@ -512,10 +540,11 @@ const boutiqueSearch = async function (req, res) {
       {
         $project: {
           name: 1,
-          'location.address': 1,
-          'dressTypes.type': 1,
+          area: 1,
           averageRating: 1,
           totalRatings: 1,
+          catalogue: 1,
+          dressTypes: 1,
           score: { $meta: 'searchScore' }
         },
       },
@@ -533,17 +562,21 @@ const boutiqueSearch = async function (req, res) {
     // 🔍 Run aggregation
     const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
 
-    // ⛑️ If empty, fallback to basic query (to confirm data exists)
+    // ⛑️ Fallback if no results
     if (boutiques.length === 0) {
       console.warn("⚠️ Semantic Search returned no results. Trying fallback query...");
-      const fallback = await BoutiqueModel.find().limit(3).select("name location averageRating").exec();
+      const fallback = await BoutiqueModel.find()
+        .limit(3)
+        .select("name area averageRating catalogue dressTypes")
+        .exec();
+
       return res.status(200).json({
         message: "No matches found with semantic search. Showing fallback boutiques.",
         results: fallback
       });
     }
 
-    // ✅ Return search results
+    // ✅ Success
     res.status(200).json(boutiques);
 
   } catch (error) {
@@ -554,6 +587,7 @@ const boutiqueSearch = async function (req, res) {
     });
   }
 };
+
 
   
 
