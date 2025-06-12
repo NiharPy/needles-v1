@@ -238,52 +238,38 @@ const cancelOrder = async (req, res) => {
 
 const declineOrder = async (req, res) => {
   try {
-    const { orderId } = req.body; // ✅ Get orderId from body
-    const boutiqueId = req.boutiqueId; // ✅ Injected from authMiddleware
+    const { orderId } = req.body;
+    const boutiqueId = req.boutiqueId; // set by authMiddleware
 
+    // 🔍 Validate input
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: "Invalid orderId" });
     }
 
-    // ✅ Fetch order
-    const order = await OrderModel.findById(orderId)
-      .populate("userId")
-      .populate("boutiqueId");
-
+    // 🔍 Find order
+    const order = await OrderModel.findById(orderId);
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // ✅ Check boutique authorization
-    if (
-      !order.boutiqueId ||
-      order.boutiqueId._id.toString() !== boutiqueId.toString()
-    ) {
-      return res.status(403).json({ message: "Unauthorized: This order does not belong to your boutique." });
+    // 🛡️ Validate boutique ownership
+    if (order.boutiqueId.toString() !== boutiqueId.toString()) {
+      return res.status(403).json({ message: "Unauthorized. This order does not belong to your boutique." });
     }
 
-    // ✅ Change order status
+    // 🛠️ Update order status
     order.status = "Declined";
     await order.save();
 
-    // ✅ Update boutique.orders
-    const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (boutique?.orders?.length) {
-      const boutiqueOrder = boutique.orders.find(o => o?.orderId?.toString() === orderId.toString());
-      if (boutiqueOrder) boutiqueOrder.status = "Declined";
-      await boutique.save();
-    }
-
-    // ✅ Update user.orders
-    const user = await UserModel.findById(order.userId._id);
-    if (user?.orders?.length) {
-      const userOrder = user.orders.find(o => o?.orderId?.toString() === orderId.toString());
-      if (userOrder) userOrder.status = "Declined";
-      await user.save();
-    }
+    // 🛠️ Update boutique.orders array status
+    await BoutiqueModel.updateOne(
+      { _id: boutiqueId, "orders.orderId": orderId },
+      { $set: { "orders.$.status": "Declined" } }
+    );
 
     return res.status(200).json({
       message: "Order declined successfully.",
+      orderId: order._id,
       status: "Declined",
     });
   } catch (error) {
