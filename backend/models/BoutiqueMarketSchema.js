@@ -31,8 +31,14 @@ const boutiqueSchema = new mongoose.Schema({
 
   // 🖼️ Header image for boutique profile
   headerImage: {
-    type: String, // Cloudinary image URL
-    default: '',
+    type: [String], // Array of Cloudinary image URLs
+    validate: {
+      validator: function (value) {
+        return value.length <= 5;
+      },
+      message: 'You can only upload up to 5 header images.',
+    },
+    default: [],
   },
 
   // 📚 Catalogue of items

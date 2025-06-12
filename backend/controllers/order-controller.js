@@ -534,15 +534,37 @@ export const getUserAlterationRequests = async (req, res) => {
 // 📌 Submit Alteration Request
 export const submitAlterationRequest = async (req, res) => {
   try {
-    const { boutiqueId, description } = req.body;
+    const { boutiqueId, description, orderId } = req.body;
     const { userId } = req.params;
 
+    // Validate user
     const user = await UserModel.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Validate boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) return res.status(404).json({ message: "Boutique not found" });
 
+    // Validate order
+    const order = await OrderModel.findById(orderId);
+    if (!order || order.userId.toString() !== userId || order.boutiqueId.toString() !== boutiqueId) {
+      return res.status(400).json({ message: "Invalid or mismatched order" });
+    }
+
+    // Enforce max 2 alteration requests per order
+    const existingRequests = await AlterationRequest.find({ orderId }).sort({ createdAt: 1 });
+
+    if (existingRequests.length >= 2) {
+      return res.status(400).json({ message: "Maximum of 2 alteration requests allowed per order." });
+    }
+
+    if (existingRequests.length === 1 && existingRequests[0].status !== 'Completed') {
+      return res.status(400).json({
+        message: "Second alteration request can be submitted only after the first request is marked as Completed.",
+      });
+    }
+
+    // Validate file uploads
     if (!req.files || !req.files.referenceImage || !req.files.orderImage) {
       return res.status(400).json({ message: "Reference image and at least one order image are required" });
     }
@@ -555,14 +577,11 @@ export const submitAlterationRequest = async (req, res) => {
       voiceNotes = req.files.voiceNote.slice(0, 5).map(file => file.path);
     }
 
-    const existingRequests = await AlterationRequest.countDocuments({ userId, boutiqueId });
-    if (existingRequests >= 2) {
-      return res.status(400).json({ message: "Maximum of 2 alteration requests allowed per user for this boutique" });
-    }
-
+    // Create alteration request
     const alterationRequest = await AlterationRequest.create({
       userId,
       boutiqueId,
+      orderId,
       description,
       referenceImage,
       orderImage,
@@ -570,6 +589,7 @@ export const submitAlterationRequest = async (req, res) => {
       status: "Pending",
     });
 
+    // Send email notification
     const mailOptions = {
       from: 'nihar.neelala124@gmail.com',
       to: 'needles.personal.2025@gmail.com',
@@ -588,11 +608,13 @@ Boutique Location: ${boutique.location?.address || ""}`,
       message: "Alteration request submitted successfully",
       alterationRequest,
     });
+
   } catch (error) {
     console.error("Error submitting alteration request:", error);
     res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
+
 
 
 
@@ -641,21 +663,36 @@ export const getActiveAlterationRequests = async (req, res) => {
 };
 
 // 📌 Open Chat if Needed
+
 export const respondToAlterationRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
     const { responseStatus } = req.body;
     const boutiqueId = req.boutiqueId;
 
-    const alterationRequest = await AlterationRequest.findOne({ _id: requestId, boutiqueId });
+    // 🔍 Validate requestId format (optional but recommended)
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({ message: "Invalid request ID format" });
+    }
+
+    // 📥 Fetch the alteration request by ID
+    const alterationRequest = await AlterationRequest.findById(requestId);
     if (!alterationRequest) {
       return res.status(404).json({ message: "Alteration request not found" });
     }
 
-    if (!["Reviewed", "In Progress", "Ready for Delivery", "Completed"].includes(responseStatus)) {
-      return res.status(400).json({ message: "Invalid status update" });
+    // 🔒 Check boutique ownership
+    if (alterationRequest.boutiqueId.toString() !== boutiqueId) {
+      return res.status(403).json({ message: "Not authorized to respond to this alteration request" });
     }
 
+    // ✅ Validate allowed status transitions
+    const validStatuses = ["Reviewed", "In Progress", "Ready for Delivery", "Completed"];
+    if (!validStatuses.includes(responseStatus)) {
+      return res.status(400).json({ message: `Invalid status update. Must be one of: ${validStatuses.join(", ")}` });
+    }
+
+    // 💾 Update the request
     alterationRequest.status = responseStatus;
     await alterationRequest.save();
 
@@ -663,8 +700,10 @@ export const respondToAlterationRequest = async (req, res) => {
       message: `Alteration request status updated to '${responseStatus}'`,
       alterationRequest,
     });
+
   } catch (error) {
-    res.status(500).json({ message: "Error updating alteration request", error: error.message });
+    console.error("Error updating alteration request:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -676,7 +715,10 @@ export const getAlterationRequestsForBoutique = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
 
-    const alterationRequests = await AlterationRequest.find({ boutiqueId })
+    const alterationRequests = await AlterationRequest.find({
+      boutiqueId,
+      status: "Pending", // Only include requests that haven't been reviewed yet
+    })
       .populate("userId", "name phone")
       .exec();
 

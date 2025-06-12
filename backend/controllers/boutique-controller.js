@@ -1,4 +1,4 @@
-import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
+import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
 import mongoose from 'mongoose';
 import OrderModel from "../models/OrderSchema.js";
 import UserModel from "../models/userschema.js";
@@ -68,6 +68,226 @@ const CreateBoutique = async function (req, res) {
 };
 
 
+export const addHeaderImage = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId; // ⬅️ Set by auth middleware
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    const uploadedImages = req.files?.images || [];
+
+    if (uploadedImages.length === 0) {
+      return res.status(400).json({ message: "At least one image must be uploaded." });
+    }
+
+    const currentCount = boutique.headerImage.length;
+    const remainingSlots = 5 - currentCount;
+
+    if (uploadedImages.length > remainingSlots) {
+      return res.status(400).json({
+        message: `You can only upload ${remainingSlots} more image(s).`,
+      });
+    }
+
+    // Push image paths (or Cloudinary URLs) to headerImage array
+    uploadedImages.forEach((file) => {
+      boutique.headerImage.push(file.path); // or `file.location` if you're using S3
+    });
+
+    await boutique.save();
+
+    res.status(200).json({
+      message: "Header images uploaded successfully.",
+      headerImage: boutique.headerImage,
+    });
+  } catch (error) {
+    console.error("Error uploading header images:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
+
+export const deleteHeaderImage = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId; // From auth middleware
+    const imageUrl = req.body.imageUrl; // Cloudinary URL to delete
+
+    if (!imageUrl) {
+      return res.status(400).json({ message: "Image URL is required for deletion." });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    const index = boutique.headerImage.indexOf(imageUrl);
+    if (index === -1) {
+      return res.status(404).json({ message: "Image URL not found in header images." });
+    }
+
+    boutique.headerImage.splice(index, 1); // Remove image
+    await boutique.save();
+
+    res.status(200).json({
+      message: "Header image deleted successfully.",
+      headerImage: boutique.headerImage,
+    });
+  } catch (error) {
+    console.error("Error deleting header image:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const updateBoutiqueDetails = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId; // Auth middleware injects this
+    const { name, location } = req.body;
+
+    // Validate boutique ID format
+    if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ message: "Invalid boutique ID" });
+    }
+
+    const updateFields = {};
+
+    // Update name if provided
+    if (name) updateFields.name = name;
+
+    // Update location fields if provided
+    if (location) {
+      if (location.address) updateFields['location.address'] = location.address;
+      if (location.city) updateFields['location.city'] = location.city;
+      if (location.state) updateFields['location.state'] = location.state;
+      if (location.latitude) updateFields['location.latitude'] = location.latitude;
+      if (location.longitude) updateFields['location.longitude'] = location.longitude;
+    }
+
+    // If nothing to update
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: "No valid fields provided to update" });
+    }
+
+    const updatedBoutique = await BoutiqueModel.findByIdAndUpdate(
+      boutiqueId,
+      { $set: updateFields },
+      { new: true }
+    );
+
+    if (!updatedBoutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    res.status(200).json({
+      message: "Boutique details updated successfully",
+      boutique: updatedBoutique,
+    });
+  } catch (error) {
+    console.error("Error updating boutique:", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const requestPhoneNumberChange = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId;
+    const { newPhone } = req.body;
+
+    if (!newPhone || !/^\+91\d{10}$/.test(newPhone)) {
+      return res.status(400).json({ message: "Invalid new phone number format" });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) return res.status(404).json({ message: "Boutique not found" });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    boutique.otp = otp;
+    await boutique.save();
+
+    // ⛔ No SMS logic here — just log for testing
+    console.log(`OTP for boutique (${boutique.phone}) to change phone: ${otp}`);
+
+    res.status(200).json({
+      message: "OTP generated and logged for testing. Use it to confirm phone update.",
+    });
+  } catch (error) {
+    console.error("Error generating OTP:", error.message);
+    res.status(500).json({ message: "Failed to initiate phone update" });
+  }
+};
+
+export const confirmPhoneNumberChange = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId;
+    const { otp, newPhone } = req.body;
+
+    if (!otp || !newPhone || !/^\+91\d{10}$/.test(newPhone)) {
+      return res.status(400).json({ message: "OTP and valid new phone number are required" });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) return res.status(404).json({ message: "Boutique not found" });
+
+    if (boutique.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    const alreadyExists = await BoutiqueModel.findOne({ phone: newPhone });
+    if (alreadyExists) {
+      return res.status(400).json({ message: "This phone number is already registered" });
+    }
+
+    boutique.phone = newPhone;
+    boutique.otp = ''; // Clear OTP
+    await boutique.save();
+
+    res.status(200).json({ message: "Phone number updated successfully" });
+  } catch (error) {
+    console.error("Error confirming phone number update:", error.message);
+    res.status(500).json({ message: "Could not update phone number" });
+  }
+};
+
+
+export const changePassword = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Old and new passwords are required" });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId);
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found" });
+    }
+
+    console.log("Entered old password:", oldPassword);
+    console.log("Stored password in DB:", boutique.password);
+
+    if (boutique.password !== oldPassword) {
+      return res.status(401).json({ message: "Incorrect old password" });
+    }
+
+    boutique.password = newPassword;
+    await boutique.save();
+
+    res.status(200).json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Error changing password:", error.message);
+    res.status(500).json({ message: "Server error while changing password" });
+  }
+};
+
+
+
+
 const Boutiquelogin = async function (req, res) {
   try {
     const { name, password, phone } = req.body;
@@ -123,8 +343,8 @@ const Boutiquelogin = async function (req, res) {
 
 const boutiquesData = async function (req, res) {
   try {
-    // Fetch all boutiques
-    const BoutiquesData = await BoutiqueModel.find({}, 'name location phone dressTypes catalogue');
+    // Fetch all boutiques but exclude `dressTypes` and `catalogue`
+    const BoutiquesData = await BoutiqueModel.find({}, 'name location phone headerImage');
 
     res.status(200).json({
       success: true,
@@ -140,6 +360,7 @@ const boutiquesData = async function (req, res) {
     });
   }
 };
+
 
 
 const verifyOtpFB = async (req, res) => {
