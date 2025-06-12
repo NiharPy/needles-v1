@@ -68,7 +68,6 @@ const CreateBoutique = async function (req, res) {
   }
 };
 
-
 export const addHeaderImage = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId; // ⬅️ Set by auth middleware
@@ -110,7 +109,6 @@ export const addHeaderImage = async (req, res) => {
   }
 };
 
-
 export const deleteAllHeaderImages = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
@@ -133,8 +131,6 @@ export const deleteAllHeaderImages = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
-
 
 export const deleteHeaderImage = async (req, res) => {
   try {
@@ -222,7 +218,6 @@ export const updateBoutiqueDetails = async (req, res) => {
   }
 };
 
-
 export const requestPhoneNumberChange = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
@@ -284,7 +279,6 @@ export const confirmPhoneNumberChange = async (req, res) => {
   }
 };
 
-
 export const changePassword = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
@@ -315,9 +309,6 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ message: "Server error while changing password" });
   }
 };
-
-
-
 
 const Boutiquelogin = async function (req, res) {
   try {
@@ -370,13 +361,14 @@ const Boutiquelogin = async function (req, res) {
   }
 };
 
-
-
 const boutiquesData = async function (req, res) {
   try {
     const boutiqueId = req.user.userId; // ⬅️ From JWT via authMiddleware
 
-    const boutique = await BoutiqueModel.findById(boutiqueId, 'name location phone headerImage');
+    const boutique = await BoutiqueModel.findById(
+      boutiqueId,
+      'name location phone headerImage area' // 🆕 include 'area'
+    );
 
     if (!boutique) {
       return res.status(404).json({
@@ -399,8 +391,6 @@ const boutiquesData = async function (req, res) {
     });
   }
 };
-
-
 
 
 const verifyOtpFB = async (req, res) => {
@@ -478,7 +468,6 @@ const verifyOtpFB = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
-
 
 const boutiqueSearch = async function (req, res) {
   try {
@@ -588,9 +577,6 @@ const boutiqueSearch = async function (req, res) {
   }
 };
 
-
-  
-
 const viewBoutiqueDetails = async (req, res) => {
   try {
     const { name } = req.params;
@@ -660,8 +646,6 @@ const addItemToCatalogue = async (req, res) => {
   }
 };
 
-
-
 const getBoutiqueCatalogue = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId; // ⬅️ Use injected boutique ID from middleware
@@ -686,8 +670,6 @@ const getBoutiqueCatalogue = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
-
 
 const deleteItemFromCatalogue = async (req, res) => {
   try {
@@ -730,8 +712,6 @@ const deleteItemFromCatalogue = async (req, res) => {
   }
 };
 
-
-
 const getRecommendedBoutiques = async (req, res) => {
   try {
     // Fetch all boutiques with the required fields, sorting by 'averageRating' in descending order
@@ -757,10 +737,6 @@ const getRecommendedBoutiques = async (req, res) => {
     return res.status(500).json({ message: 'An error occurred while fetching boutiques' });
   }
 };
-
-
-
-
 
 const getRecommendedBoutiquesByDressType = async (req, res) => {
   try {
@@ -798,8 +774,6 @@ const getRecommendedBoutiquesByDressType = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
-
-
 
 const addDressType = async (req, res) => {
   try {
@@ -840,9 +814,6 @@ const addDressType = async (req, res) => {
   }
 };
 
-
-
-
 const deleteDressType = async (req, res) => {
   const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
   const { dressType } = req.body;
@@ -861,9 +832,6 @@ const deleteDressType = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-
-
-
 
 const getDressTypeImages = async (req, res) => {
   const { boutiqueId, dressType } = req.params;
@@ -1015,7 +983,6 @@ const getOrdersByStatus = async (req, res) => {
   }
 };
 
-
 export const logoutBoutique = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -1044,7 +1011,6 @@ export const logoutBoutique = async (req, res) => {
     res.status(500).json({ message: "Logout failed", error: error.message });
   }
 };
-
 
 export {getOrdersByStatus};
 export {trackBusiness};
