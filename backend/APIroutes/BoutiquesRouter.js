@@ -1,6 +1,6 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypesWithDetails, getOrdersByStatus, addHeaderImage, deleteHeaderImage, updateBoutiqueDetails} from '../controllers/boutique-controller.js';
-import { changePassword, requestPhoneNumberChange, confirmPhoneNumberChange } from '../controllers/boutique-controller.js';
+import { changePassword, requestPhoneNumberChange, confirmPhoneNumberChange, logoutBoutique } from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-boutique.js';
 import { updateOrderStatus, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, declineOrder, getBoutiqueOrders, getCompletedOrders, getActiveAlterationRequests} from '../controllers/order-controller.js';
 
@@ -73,6 +73,8 @@ router.post(
 );
 
 router.route("/header-image/delete").delete(authMiddleware,deleteHeaderImage);//for profile
+
+router.post("/logout", authMiddleware, logoutBoutique);
 
 
 export default router;

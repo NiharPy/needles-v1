@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 import { v2 as cloudinary } from 'cloudinary';
 import { getEmbedding } from '../utils/embedding.js';
+import BlacklistedToken from "../models/BlacklistedToken.js";
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -968,6 +969,36 @@ const getOrdersByStatus = async (req, res) => {
   } catch (error) {
     console.error("Error fetching orders:", error);
     res.status(500).json({ error: "Server error", details: error.message });
+  }
+};
+
+
+export const logoutBoutique = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Access token missing or invalid." });
+    }
+
+    const accessToken = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+    const boutiqueId = decoded.userId;
+
+    // Blacklist the access token
+    const expiresAt = new Date(decoded.exp * 1000);
+    await BlacklistedToken.create({ token: accessToken, expiresAt });
+
+    // Clear refresh token from DB
+    await BoutiqueModel.findByIdAndUpdate(boutiqueId, { refreshToken: null });
+
+    // Optionally clear refresh token cookie
+    res.clearCookie("refreshToken", { httpOnly: true, secure: true, sameSite: "strict" });
+
+    res.status(200).json({ message: "Logged out successfully." });
+  } catch (error) {
+    console.error("Logout error:", error.message);
+    res.status(500).json({ message: "Logout failed", error: error.message });
   }
 };
 

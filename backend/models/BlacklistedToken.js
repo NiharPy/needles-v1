@@ -2,10 +2,7 @@ import mongoose from "mongoose";
 
 const blacklistedTokenSchema = new mongoose.Schema({
   token: { type: String, required: true },
-  expiresAt: { type: Date, required: true },
+  expiresAt: { type: Date, required: true, index: { expires: 0 } }, // TTL index auto-removes expired tokens
 });
 
-const BlacklistedTokenModel = mongoose.model("BlacklistedToken", blacklistedTokenSchema);
-
-
-export default BlacklistedTokenModel;
+export default mongoose.model("BlacklistedToken", blacklistedTokenSchema);

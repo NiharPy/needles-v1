@@ -70,10 +70,15 @@ const refreshAccessToken = async (req, res) => {
       return res.status(403).json({ message: "User not found." });
     }
 
-    const newAccessToken = generateAccessToken(user);
+    // 🔐 Validate refresh token matches stored token
+    if (user.refreshToken !== refreshToken) {
+      return res.status(403).json({ message: "Refresh token does not match." });
+    }
 
+    const newAccessToken = generateAccessToken(user);
     res.status(200).json({ accessToken: newAccessToken });
   });
 };
+
 
 export { authMiddleware as default, refreshAccessToken, publicMiddleware };
