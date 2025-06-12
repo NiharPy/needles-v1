@@ -238,16 +238,14 @@ const cancelOrder = async (req, res) => {
 const declineOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { status } = req.body;
+    const boutiqueId = req.boutiqueId; // ✅ From authMiddleware
 
-    const boutiqueId = req.boutiqueId; // ✅ Injected by authMiddleware
-
-    // ✅ Only "Declined" status is allowed here
-    if (status !== 'Declined') {
-      return res.status(400).json({ message: 'Invalid request. Only "Declined" status is allowed here.' });
+    // ✅ Validate orderId
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: 'Invalid orderId' });
     }
 
-    // ✅ Find the order with boutique and user populated
+    // ✅ Fetch order
     const order = await OrderModel.findById(orderId)
       .populate('userId')
       .populate('boutiqueId');
@@ -256,12 +254,16 @@ const declineOrder = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // ✅ Ensure the order belongs to the authenticated boutique
-    if (!order.boutiqueId || order.boutiqueId._id.toString() !== boutiqueId.toString()) {
-      return res.status(400).json({ message: 'Boutique not found in the order or unauthorized.' });
+    // ✅ Check that order.boutiqueId and its _id exist before calling .toString()
+    if (
+      !order.boutiqueId ||
+      !order.boutiqueId._id ||
+      order.boutiqueId._id.toString() !== boutiqueId?.toString()
+    ) {
+      return res.status(403).json({ message: 'Unauthorized: This order does not belong to your boutique.' });
     }
 
-    // ✅ Ensure boutique exists
+    // ✅ Fetch boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: 'Boutique not found' });
@@ -271,34 +273,34 @@ const declineOrder = async (req, res) => {
     order.status = 'Declined';
     await order.save();
 
-    // ✅ Update boutique's internal order list
-    const boutiqueOrder = boutique.orders.find(o => o.orderId.toString() === orderId.toString());
-    if (boutiqueOrder) {
-      boutiqueOrder.status = 'Declined';
-      await boutique.save();
+    // ✅ Update status in boutique.orders
+    if (Array.isArray(boutique.orders)) {
+      const boutiqueOrder = boutique.orders.find(o => o?.orderId?.toString() === orderId.toString());
+      if (boutiqueOrder) boutiqueOrder.status = 'Declined';
     }
+    await boutique.save();
 
-    // ✅ Update user's internal order list
-    const user = await UserModel.findById(order.userId);
-    const userOrder = user.orders.find(o => o.orderId.toString() === orderId.toString());
-    if (userOrder) {
-      userOrder.status = 'Declined';
+    // ✅ Update status in user.orders
+    const user = await UserModel.findById(order.userId?._id || order.userId);
+    if (user && Array.isArray(user.orders)) {
+      const userOrder = user.orders.find(o => o?.orderId?.toString() === orderId.toString());
+      if (userOrder) userOrder.status = 'Declined';
       await user.save();
     }
 
-    // ✅ Response without SMS logic
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Order declined successfully.',
       status: 'Declined',
     });
 
   } catch (error) {
-    console.error('Error declining order:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('❌ Error declining order:', error);
+    return res.status(500).json({
+      message: 'Server error',
+      error: error.message,
+    });
   }
 };
-
-
 
 const viewOrders = async (req, res) => {
   try {
