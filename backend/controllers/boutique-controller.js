@@ -344,23 +344,32 @@ const Boutiquelogin = async function (req, res) {
 
 const boutiquesData = async function (req, res) {
   try {
-    // Fetch all boutiques but exclude `dressTypes` and `catalogue`
-    const BoutiquesData = await BoutiqueModel.find({}, 'name location phone headerImage');
+    const boutiqueId = req.user.userId; // ⬅️ From JWT via authMiddleware
+
+    const boutique = await BoutiqueModel.findById(boutiqueId, 'name location phone headerImage');
+
+    if (!boutique) {
+      return res.status(404).json({
+        success: false,
+        message: "Boutique not found",
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: "Boutiques fetched successfully",
-      data: BoutiquesData,
+      message: "Boutique fetched successfully",
+      data: boutique,
     });
   } catch (error) {
-    console.error("Error fetching boutiques:", error);
+    console.error("Error fetching boutique:", error);
 
     res.status(500).json({
       success: false,
-      message: "Server error. Unable to fetch boutiques.",
+      message: "Server error. Unable to fetch boutique.",
     });
   }
 };
+
 
 
 
