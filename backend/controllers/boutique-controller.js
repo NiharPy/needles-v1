@@ -7,6 +7,9 @@ import { sendOTP } from "../utils/otpService.js";
 import { v2 as cloudinary } from 'cloudinary';
 import { getEmbedding } from '../utils/embedding.js';
 import BlacklistedToken from "../models/BlacklistedToken.js";
+import openai from "../utils/openai.js"; // axios client with API key
+import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to compute similarity
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -714,66 +717,95 @@ const deleteItemFromCatalogue = async (req, res) => {
 
 const getRecommendedBoutiques = async (req, res) => {
   try {
-    // Fetch all boutiques with the required fields, sorting by 'averageRating' in descending order
-    const boutiques = await BoutiqueModel.find({})
-      .select('name location dressTypes averageRating ratings') // Select only the fields you need
-      .sort({ averageRating: -1 }) // Sort by 'averageRating' in descending order
-      .lean(); // Using lean() to return plain JavaScript objects
+    const { area } = req.query; // Area is a top-level field
+
+    const filter = area ? { area } : {}; // Simple top-level filter
+
+    const boutiques = await BoutiqueModel.find(filter)
+      .select('name area dressTypes averageRating ratings headerImage')
+      .sort({ averageRating: -1 })
+      .limit(10)
+      .lean();
 
     if (!boutiques || boutiques.length === 0) {
-      return res.status(404).json({ message: 'No boutiques found' });
+      return res.status(404).json({ message: 'No boutiques found for the specified area' });
     }
 
-    // Add total rating (length of the ratings array) for each boutique
+    // Add totalRating and remove the raw ratings array
     boutiques.forEach(boutique => {
       boutique.totalRating = boutique.ratings.length;
-      delete boutique.ratings; // Remove ratings field to avoid sending unnecessary data
+      delete boutique.ratings;
     });
 
-    // Send the sorted boutiques to the frontend
     return res.status(200).json({ recommendedBoutiques: boutiques });
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching recommended boutiques:", error);
     return res.status(500).json({ message: 'An error occurred while fetching boutiques' });
   }
 };
 
-const getRecommendedBoutiquesByDressType = async (req, res) => {
+
+const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
+
+const getRecommendedDressTypes = async (req, res) => {
   try {
-    const { dressType } = req.params; // Get dressType from URL params
-    if (!dressType || !['Saree Blouse', 'Lehenga', 'Kurta', 'Shirt', 'Gown'].includes(dressType)) {
-      return res.status(400).json({ message: "Invalid dress type." });
-    }
+    // 1. Fetch all boutiques and collect dress type labels
+    const boutiques = await BoutiqueModel.find().select("dressTypes").lean();
+    const allDressTypes = boutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));
+    const uniqueDressTypes = [...new Set(allDressTypes)];
 
-    // Find boutiques that have the given dress type in their dressTypes array
-    const boutiques = await BoutiqueModel.find({
-      'dressTypes.type': dressType, // Matching dress type
-    })
-      .select('name location dressTypes averageRating ratings') // Select only the fields you need
-      .lean(); // Using lean() for better performance
-
-    if (boutiques.length === 0) {
-      return res.status(404).json({ message: `No boutiques found for the dress type: ${dressType}` });
-    }
-
-    // Add total rating (length of the ratings array) for each boutique
-    boutiques.forEach(boutique => {
-      boutique.totalRating = boutique.ratings.length;
-      delete boutique.ratings; // Remove ratings field to avoid sending unnecessary data
+    // 2. Get embeddings from OpenAI
+    const embeddingResponse = await openai.post("/v1/embeddings", {
+      input: uniqueDressTypes,
+      model: "text-embedding-3-small",
     });
 
-    // Sort boutiques by average rating in descending order (highest to lowest)
-    boutiques.sort((a, b) => b.averageRating - a.averageRating);
+    const embeddings = embeddingResponse.data.data.map(item => item.embedding);
+
+    // 3. Get canonical label embeddings
+    const canonicalResponse = await openai.post("/v1/embeddings", {
+      input: canonicalLabels,
+      model: "text-embedding-3-small",
+    });
+
+    const canonicalEmbeddings = canonicalResponse.data.data.map(item => item.embedding);
+
+    // 4. Map each unique dress type to closest canonical label
+    const labelMapping = {};
+    uniqueDressTypes.forEach((label, i) => {
+      let maxSim = -1, bestMatch = null;
+      canonicalLabels.forEach((canonical, j) => {
+        const sim = cosineSimilarity(embeddings[i], canonicalEmbeddings[j]);
+        if (sim > maxSim) {
+          maxSim = sim;
+          bestMatch = canonical;
+        }
+      });
+      labelMapping[label] = bestMatch;
+    });
+
+    // 5. Count frequency of each canonical label
+    const labelCount = {};
+    allDressTypes.forEach(label => {
+      const mapped = labelMapping[label];
+      labelCount[mapped] = (labelCount[mapped] || 0) + 1;
+    });
+
+    // 6. Return top ordered canonical dress types
+    const sorted = Object.entries(labelCount)
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => ({ type, count }));
 
     res.status(200).json({
-      message: `Recommended boutiques for the dress type: ${dressType}`,
-      boutiques,
+      message: "Most ordered dress types (clustered)",
+      dressTypes: sorted,
     });
-  } catch (error) {
-    console.error("Error while fetching recommended boutiques by dress type:", error);
-    res.status(500).json({ message: "Internal server error." });
+  } catch (err) {
+    console.error("Error fetching recommended dress types:", err.message);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+
 
 const addDressType = async (req, res) => {
   try {
@@ -1023,7 +1055,7 @@ export {addDressType};
 
 export {deleteDressType};
 
-export {getRecommendedBoutiquesByDressType};
+export {getRecommendedDressTypes};
 
 export { getRecommendedBoutiques };
 
