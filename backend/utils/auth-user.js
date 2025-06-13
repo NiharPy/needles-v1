@@ -3,97 +3,80 @@ import UserModel from "../models/userschema.js";
 import BlacklistedToken from '../models/BlacklistedToken.js';
 import { generateAccessToken } from './token.js';
 
+// 🛡️ Protected middleware
 const authMiddleware = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization;
 
-    // Check if the token exists and starts with "Bearer "
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Access token missing or invalid." });
-    }
-
-    const token = authHeader.split(" ")[1]; // Extract token after 'Bearer '
-
-    // Check if token is blacklisted
-    const blacklisted = await BlacklistedToken.findOne({ token });
-    if (blacklisted) {
-      return res.status(401).json({ message: "Unauthorized: Token has been invalidated." });
-    }
-
-    // Verify the access token
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-      if (err) {
-        if (err.name === "TokenExpiredError") {
-          return res.status(401).json({ message: "Access token expired. Please refresh your token." });
-        }
-        return res.status(403).json({ message: "Invalid access token." });
-      }
-
-      // Token is valid; attach user data to the request object
-      req.user = decoded; // `decoded` contains `userId`, `name`, etc.
-      next();
-    });
-  } catch (error) {
-    console.error("Auth middleware error:", error);
-    res.status(500).json({ message: "Internal server error." });
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Access token missing or invalid." });
   }
-};
 
-const refreshAccessToken = async (req, res) => {
-    try {
-      const { refreshToken } = req.body;
-  
-      if (!refreshToken) {
-        return res.status(400).json({ message: "Refresh token is required." });
-      }
-  
-      // Verify the refresh token
-      jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
-        if (err) {
-          return res.status(403).json({ message: "Invalid or expired refresh token." });
-        }
-  
-        const user = await UserModel.findById(decoded.user.Id);
-        if (!user || user.refreshToken !== refreshToken) {
-          return res.status(403).json({ message: "Invalid refresh token." });
-        }
-  
-        // Generate a new access token
-        const accessToken = jwt.sign(
-          { userId: user._id, name: user.name },
-          process.env.ACCESS_TOKEN_SECRET,
-          { expiresIn: "15m" }
-        );
-  
-        res.status(200).json({ accessToken });
+  const token = authHeader.split(" ")[1];
+
+  // ❌ Check if token is blacklisted
+  const blacklisted = await BlacklistedToken.findOne({ token });
+  if (blacklisted) {
+    return res.status(401).json({ message: "Token has been invalidated." });
+  }
+
+  // ✅ Decode and attach user info
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({
+        message: err.name === "TokenExpiredError" ? "Access token expired." : "Invalid token."
       });
-    } catch (error) {
-      console.error("Error refreshing token:", error);
-      res.status(500).json({ message: "Internal server error." });
     }
+
+    req.user = decoded;
+    req.userId = decoded.userId; // 👈 Inject userId
+    next();
+  });
 };
 
+// 🌐 Optional middleware (for public routes)
 const publicMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1]; // Extract the token if present
+  const token = req.headers.authorization?.split(" ")[1];
 
   if (token) {
-    // Attempt to verify the token
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-      if (!err) {
-        // If token is valid, attach user info to the request object
-        req.user = decoded;
-      }
-      // If token is invalid, silently ignore the error and proceed
-    });
+    try {
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+      req.user = decoded;
+      req.userId = decoded.userId;
+    } catch {
+      // Invalid token — allow to continue silently
+    }
   }
 
-  // Continue to the next middleware or route handler
   next();
 };
 
-export {publicMiddleware};
+// 🔄 Refresh access token endpoint
+const refreshAccessToken = async (req, res) => {
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
-  
-export {refreshAccessToken};
+  if (!refreshToken) {
+    return res.status(401).json({ message: "Refresh token required." });
+  }
 
+  jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Invalid or expired refresh token." });
+    }
+
+    const user = await UserModel.findById(decoded.userId);
+    if (!user) {
+      return res.status(403).json({ message: "User not found." });
+    }
+
+    // Check stored refresh token matches
+    if (user.refreshToken !== refreshToken) {
+      return res.status(403).json({ message: "Refresh token does not match." });
+    }
+
+    const newAccessToken = generateAccessToken(user);
+    res.status(200).json({ accessToken: newAccessToken });
+  });
+};
+
+export { publicMiddleware, refreshAccessToken };
 export default authMiddleware;
