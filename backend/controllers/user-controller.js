@@ -4,6 +4,7 @@ import { sendOTP } from "../utils/otpService.js";
 import axios from 'axios';
 import mongoose from "mongoose";
 import BlacklistedToken from '../models/BlacklistedToken.js';
+import { generateAccessToken, generateRefreshToken } from "./token.js";
 
 const OTP_EXPIRATION_TIME = 5
 
@@ -89,48 +90,48 @@ const Userlogin = async function(req,res) {
 };
 
 const verifyOtp = async (req, res) => {
-    try {
-      const { phone, otp } = req.body;
-  
-      if (!phone || !otp) {
-        return res.status(400).json({ message: "Phone number and OTP are required." });
-      }
-  
-      // Find user by phone number (instead of userId)
-      const user = await UserModel.findOne({ phone });
-      if (!user) {
-        return res.status(404).json({ message: "User not found." });
-      }
-  
-      // Check if OTP is expired
-      if (Date.now() > user.otpExpiry) {
-        return res.status(400).json({ message: "OTP has expired. Please request a new one." });
-      }
-  
-      // Verify OTP (no need to hash, just compare)
-      if (otp !== user.otp) {
-        return res.status(400).json({ message: "Invalid OTP. Please try again." });
-      }
-  
-      // Generate tokens after successful OTP verification
-      const accessToken = jwt.sign({ userId: user._id, name: user.name }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "30d" });
-      const refreshToken = jwt.sign({ userId: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "30d" });
-  
-      // Save refresh token
-      user.refreshToken = refreshToken;
-      await user.save();
-  
-      res.status(200).json({
-        message: "User authenticated successfully.",
-        accessToken,
-        refreshToken,
-      });
-  
-    } catch (error) {
-      console.error("Error verifying OTP:", error);
-      res.status(500).json({ message: "Server error. Please try again." });
+  try {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+      return res.status(400).json({ message: "Phone number and OTP are required." });
     }
-  };
+
+    // Find user by phone number
+    const user = await UserModel.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Check if OTP is expired
+    if (Date.now() > user.otpExpiry) {
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    // Verify OTP
+    if (otp !== user.otp) {
+      return res.status(400).json({ message: "Invalid OTP. Please try again." });
+    }
+
+    // Generate tokens
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    // Store the refresh token
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.status(200).json({
+      message: "User authenticated successfully.",
+      accessToken,
+      refreshToken,
+    });
+
+  } catch (error) {
+    console.error("Error verifying OTP:", error);
+    res.status(500).json({ message: "Server error. Please try again." });
+  }
+};
 
   // Function to get place name from latitude and longitude using Google Maps Geocode API
   const getPlaceNameFromLatLng = async (lat, lng) => {
