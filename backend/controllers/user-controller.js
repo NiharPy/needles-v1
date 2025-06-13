@@ -97,34 +97,58 @@ const verifyOtp = async (req, res) => {
       return res.status(400).json({ message: "Phone number and OTP are required." });
     }
 
-    // Find user by phone number
+    // 🔍 Find user by phone
     const user = await UserModel.findOne({ phone });
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Check if OTP is expired
-    if (Date.now() > user.otpExpiry) {
-      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    // ⏱️ Check OTP expiry
+    if (!user.otp || Date.now() > user.otpExpiry) {
+      return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
-    // Verify OTP
+    // ❌ OTP mismatch
     if (otp !== user.otp) {
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
-    // Generate tokens
+    // 🔐 Generate Tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Store the refresh token
+    // 💾 Store refreshToken, clear OTP
     user.refreshToken = refreshToken;
+    user.otp = null;
+    user.otpExpiry = null;
     await user.save();
 
+    // 🍪 Set secure cookies
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      domain: 'needles-v1.onrender.com',
+      maxAge: 15 * 60 * 1000, // 15 minutes
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      domain: 'needles-v1.onrender.com',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    // 🎉 Send response
     res.status(200).json({
       message: "User authenticated successfully.",
+      user: {
+        _id: user._id,
+        name: user.name,
+        role: user.role,
+      },
       accessToken,
-      refreshToken,
     });
 
   } catch (error) {
