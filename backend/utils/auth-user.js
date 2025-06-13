@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import UserModel from "../models/userschema.js";
 import BlacklistedToken from '../models/BlacklistedToken.js';
-import { generateAccessToken } from './token.js';
+import { generateAccessToken, generateRefreshToken } from "./token.js";
 
 // 🛡️ Protected middleware
 const authMiddleware = async (req, res, next) => {
@@ -52,31 +52,48 @@ const publicMiddleware = (req, res, next) => {
 
 // 🔄 Refresh access token endpoint
 const refreshAccessToken = async (req, res) => {
-  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  try {
+    const { refreshToken } = req.body;
 
-  if (!refreshToken) {
-    return res.status(401).json({ message: "Refresh token required." });
+    if (!refreshToken) {
+      return res.status(401).json({ message: "Refresh token required." });
+    }
+
+    // Verify refresh token
+    jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
+      if (err) {
+        return res.status(403).json({ message: "Invalid or expired refresh token." });
+      }
+
+      const user = await UserModel.findById(decoded.userId);
+      if (!user) {
+        return res.status(403).json({ message: "User not found." });
+      }
+
+      // Check if stored refreshToken matches
+      if (user.refreshToken !== refreshToken) {
+        return res.status(403).json({ message: "Refresh token does not match." });
+      }
+
+      // Generate new tokens
+      const newAccessToken = generateAccessToken(user);
+      const newRefreshToken = generateRefreshToken(user);
+
+      // Store new refresh token in DB
+      user.refreshToken = newRefreshToken;
+      await user.save();
+
+      res.status(200).json({
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      });
+    });
+  } catch (error) {
+    console.error("Error refreshing token:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
-
-  jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: "Invalid or expired refresh token." });
-    }
-
-    const user = await UserModel.findById(decoded.userId);
-    if (!user) {
-      return res.status(403).json({ message: "User not found." });
-    }
-
-    // Check stored refresh token matches
-    if (user.refreshToken !== refreshToken) {
-      return res.status(403).json({ message: "Refresh token does not match." });
-    }
-
-    const newAccessToken = generateAccessToken(user);
-    res.status(200).json({ accessToken: newAccessToken });
-  });
 };
+
 
 export { publicMiddleware, refreshAccessToken };
 export default authMiddleware;
