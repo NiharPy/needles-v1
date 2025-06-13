@@ -4,7 +4,7 @@ import { sendOTP } from "../utils/otpService.js";
 import axios from 'axios';
 import mongoose from "mongoose";
 import BlacklistedToken from '../models/BlacklistedToken.js';
-import { generateAccessToken, generateRefreshToken } from "./token.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 
 const OTP_EXPIRATION_TIME = 5
 
