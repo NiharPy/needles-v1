@@ -113,13 +113,18 @@ const verifyOtp = async (req, res) => {
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Save refresh token, clear OTP data
-    user.refreshToken = refreshToken;
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
+    // ✅ Bypass validation error by using updateOne directly
+    await UserModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          refreshToken,
+          otp: null,
+          otpExpiry: null,
+        }
+      }
+    );
 
-    // Send tokens in response (not cookies)
     res.status(200).json({
       message: "User authenticated successfully.",
       user: {
@@ -131,7 +136,7 @@ const verifyOtp = async (req, res) => {
       accessToken,
       refreshToken,
     });
-    
+
   } catch (error) {
     console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Server error. Please try again." });
