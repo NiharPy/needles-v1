@@ -24,7 +24,7 @@ router.route("/verify-otp").post(verifyOtp);
 
 router.route("/:userId/logout").post(authMiddleware,UserLogout);
 
-router.route("/search").get(authMiddleware,boutiqueSearch);
+router.route("/search").get(authMiddleware,boutiqueSearch);//searchpage
 
 router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
 
@@ -55,7 +55,7 @@ router.route('/recommended').get(authMiddleware,getRecommendedDressTypes);//home
 
 router.get('/areas', authMiddleware,getAllBoutiqueAreas);//homepage
 
-router.route('/:userId/recommended/:dressType').get(authMiddleware, getRecommendedDressTypes);
+//router.route('/:userId/recommended/:dressType').get(authMiddleware, getRecommendedDressTypes);
 
 router.route("/:userId/rate-order").post(authMiddleware, rateOrder);
 

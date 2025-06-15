@@ -474,6 +474,11 @@ const verifyOtpFB = async (req, res) => {
 
 const boutiqueSearch = async function (req, res) {
   try {
+    const userId = req.userId; // ✅ Injected from auth-user.js
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized access." });
+    }
+
     const { query } = req.query;
 
     if (!query) {
@@ -579,6 +584,7 @@ const boutiqueSearch = async function (req, res) {
     });
   }
 };
+
 
 const viewBoutiqueDetails = async (req, res) => {
   try {
