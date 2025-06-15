@@ -717,6 +717,11 @@ const deleteItemFromCatalogue = async (req, res) => {
 
 const getRecommendedBoutiques = async (req, res) => {
   try {
+    const userId = req.userId; // ✅ Extracted from JWT by middleware
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized access." });
+    }
+
     const { area } = req.query; // Area is a top-level field
 
     const filter = area ? { area } : {}; // Simple top-level filter
@@ -737,18 +742,27 @@ const getRecommendedBoutiques = async (req, res) => {
       delete boutique.ratings;
     });
 
-    return res.status(200).json({ recommendedBoutiques: boutiques });
+    return res.status(200).json({
+      message: "Recommended boutiques fetched successfully.",
+      recommendedBoutiques: boutiques,
+    });
   } catch (error) {
-    console.error("Error fetching recommended boutiques:", error);
+    console.error(`Error fetching recommended boutiques for user ${req.userId}:`, error);
     return res.status(500).json({ message: 'An error occurred while fetching boutiques' });
   }
 };
+
 
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
 
 const getRecommendedDressTypes = async (req, res) => {
   try {
+    const userId = req.userId; // ✅ Extracted from JWT by middleware
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized access." });
+    }
+
     // 1. Fetch all boutiques and collect dress type labels
     const boutiques = await BoutiqueModel.find().select("dressTypes").lean();
     const allDressTypes = boutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));

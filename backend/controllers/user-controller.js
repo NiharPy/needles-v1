@@ -256,6 +256,32 @@ const verifyOtp = async (req, res) => {
       res.status(500).json({ message: "An error occurred during logout." });
     }
   };
+
+
+  export const getAllBoutiqueAreas = async (req, res) => {
+    try {
+      const userId = req.userId; // ✅ Injected by auth-user.js middleware
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized access." });
+      }
+  
+      // 🏙️ Fetch all areas from boutiques where area field exists
+      const areas = await BoutiqueModel.distinct("area", { area: { $ne: null } });
+  
+      if (!areas || areas.length === 0) {
+        return res.status(404).json({ message: "No boutique areas found." });
+      }
+  
+      res.status(200).json({
+        message: "Boutique areas fetched successfully.",
+        areas,
+      });
+    } catch (error) {
+      console.error("Error fetching boutique areas:", error);
+      res.status(500).json({ message: "Server error while fetching areas." });
+    }
+  };
+  
   
 
 export { updateUserLocation };
