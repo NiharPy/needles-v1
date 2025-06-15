@@ -858,6 +858,19 @@ const canonicalImageMap = [
   { label: "Choli", imageUrl: "https://res.cloudinary.com/.../choli.jpg" },
 ];
 
+// Utility to normalize dress type labels
+const normalize = str => str.trim().toLowerCase();
+
+// Build canonical mapping and image map
+const canonicalMapping = {};
+canonicalLabels.forEach(label => {
+  canonicalMapping[normalize(label)] = label;
+});
+
+const imageMap = {};
+canonicalImageMap.forEach(({ label, imageUrl }) => {
+  imageMap[normalize(label)] = imageUrl;
+});
 
 const GOOGLE_DISTANCE_MATRIX_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -903,7 +916,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // 👗 Aggregate dress types under canonical labels
+    // Aggregate dress types under canonical labels
     const canonicalCountMap = {};
     const canonicalRawTypes = new Set();
 
@@ -911,7 +924,8 @@ export const getRecommendedDressTypes = async (req, res) => {
       (b.dressTypes || []).forEach(dt => {
         const rawType = dt.type?.trim();
         if (!rawType) return;
-        const canonical = canonicalMapping[rawType.toLowerCase()] || rawType;
+        const normalized = normalize(rawType);
+        const canonical = canonicalMapping[normalized] || rawType;
         canonicalRawTypes.add(canonical);
         canonicalCountMap[canonical] = (canonicalCountMap[canonical] || 0) + 1;
       });
@@ -919,7 +933,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const uniqueLabels = [...canonicalRawTypes];
 
-    // 🧠 Fetch user's recent embeddings
+    // Get user's recent embedding history
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
     if (userEmbeddings.length === 0) {
@@ -927,13 +941,13 @@ export const getRecommendedDressTypes = async (req, res) => {
         message: "No user activity yet. Showing trending dress types.",
         dressTypes: uniqueLabels.map(label => ({
           label,
-          imageUrl: canonicalImageMap[label] || null,
+          imageUrl: imageMap[normalize(label)] || null,
           count: canonicalCountMap[label] || 1,
         })),
       });
     }
 
-    // 🔍 Get embeddings for the labels
+    // Get embeddings for the labels
     const embeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
       input: uniqueLabels,
       model: "text-embedding-3-small",
@@ -945,7 +959,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const labelEmbeddings = embeddingRes.data.data.map(d => d.embedding);
 
-    // 🔁 Score labels by relevance to user activity
+    // Score labels by similarity
     const relevanceScores = uniqueLabels.map((label, idx) => {
       const similarity = userEmbeddings.reduce((sum, emb) => {
         return sum + cosineSimilarity(labelEmbeddings[idx], emb);
@@ -953,7 +967,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
       return {
         label,
-        imageUrl: canonicalImageMap[label] || null,
+        imageUrl: imageMap[normalize(label)] || null,
         count: canonicalCountMap[label] || 1,
         relevance: similarity,
       };
@@ -961,7 +975,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const sorted = relevanceScores.sort((a, b) => b.relevance - a.relevance);
 
-    // 📝 Log top 5
+    // Log top 5 viewed dress types
     for (const { label } of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", label, {
         source: "getRecommendedDressTypes",
