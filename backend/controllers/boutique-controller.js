@@ -10,8 +10,9 @@ import BlacklistedToken from "../models/BlacklistedToken.js";
 import openai from "../utils/openai.js"; // axios client with API key
 import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to compute similarity
 import { predefinedHyderabadAreas } from '../constants/areas.js';
-import { logUserActivity } from "../controllers/recommendationController.js"
+import { logUserActivity, getRecentUserEmbeddings} from "../controllers/recommendationController.js"
 import haversine from "haversine-distance";
+import axios from "axios";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -59,10 +60,26 @@ const CreateBoutique = async function (req, res) {
       dressTypes: parsedDressTypes,
       headerImage: headerImageUrl,
       catalogue: parsedCatalogue,
-      // embedding is intentionally omitted
     });
 
+    // ✅ Generate a semantic string for embedding
+    const combinedText = `
+      Boutique name: ${name}
+      Location: ${parsedLocation?.address || ''}
+      Dress types: ${parsedDressTypes?.join(', ')}
+      Catalogue: ${parsedCatalogue?.join(', ')}
+      Rating: ${CreatedBoutique.rating || 'No rating yet'}
+    `;
+
+    // ✅ Get vector embedding
+    const embedding = await getEmbeddingForText(combinedText); // returns an array of numbers
+
+    // ✅ Save embedding in the boutique document
+    CreatedBoutique.embedding = embedding;
+    await CreatedBoutique.save();
+
     return res.status(201).json(CreatedBoutique);
+
   } catch (error) {
     console.error("Error creating Boutique:", error);
 
@@ -72,6 +89,22 @@ const CreateBoutique = async function (req, res) {
 
     return res.status(500).send("An unexpected error occurred");
   }
+};
+
+export const updateBoutiqueEmbedding = async (boutiqueId) => {
+  const boutique = await BoutiqueModel.findById(boutiqueId).lean();
+  if (!boutique) throw new Error("Boutique not found");
+
+  const combinedText = `
+    Boutique name: ${boutique.name}
+    Location: ${boutique.location?.address || ''}
+    Dress types: ${boutique.dressTypes?.join(', ') || ''}
+    Catalogue: ${boutique.catalogue?.join(', ') || ''}
+    Rating: ${boutique.rating || 'No rating yet'}
+  `;
+
+  const embedding = await getEmbeddingForText(combinedText);
+  await BoutiqueModel.findByIdAndUpdate(boutiqueId, { embedding });
 };
 
 export const addHeaderImage = async (req, res) => {
@@ -221,6 +254,9 @@ export const updateBoutiqueDetails = async (req, res) => {
     if (!updatedBoutique) {
       return res.status(404).json({ message: "Boutique not found" });
     }
+
+    // ✅ Recalculate embedding based on updated fields
+    await updateBoutiqueEmbedding(boutiqueId);
 
     res.status(200).json({
       message: "Boutique details updated successfully",
@@ -487,30 +523,42 @@ const verifyOtpFB = async (req, res) => {
 
 const boutiqueSearch = async function (req, res) {
   try {
-    const userId = req.userId; // ✅ Injected from auth-user.js
+    const userId = req.userId;
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
     const { query } = req.query;
-
     if (!query) {
       return res.status(400).json({ message: 'Query is required for semantic search' });
     }
 
-    // 🔍 Parse rating and area from query
-    const ratingMatch = query.match(/(\d(\.\d)?)(\s?stars?|\s?star\s?rating)/i);
-    const areaMatch = query.match(/\bin\s([a-zA-Z\s]+)/i); // e.g., "in Miyapur"
+    // 🧠 Query Parser Function
+    const parseQuery = (query) => {
+      const ratingRegex = /(\d(\.\d)?)(\s?stars?|\s?star\s?rating)?/i;
+      const areaRegex = /\bin\s([a-zA-Z\s]+)/i;
 
-    const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
-    const areaValue = areaMatch ? areaMatch[1].trim() : null;
+      const ratingMatch = query.match(ratingRegex);
+      const areaMatch = query.match(areaRegex);
 
-    console.log("Semantic Search Debug → Query:", query);
-    console.log("Parsed Rating:", ratingValue);
-    console.log("Parsed Area:", areaValue);
+      const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+      const areaValue = areaMatch ? areaMatch[1].trim() : null;
 
-    // 🔹 Get embedding vector
-    const queryVector = await getEmbedding(query);
+      let filteredQuery = query;
+      if (ratingMatch) filteredQuery = filteredQuery.replace(ratingMatch[0], '');
+      if (areaMatch) filteredQuery = filteredQuery.replace(areaMatch[0], '');
+
+      const cleanedQuery = filteredQuery.trim();
+
+      return { cleanedQuery, ratingValue, areaValue };
+    };
+
+    // 🧼 Parse the query
+    const { cleanedQuery, ratingValue, areaValue } = parseQuery(query);
+    console.log("Semantic Search →", { cleanedQuery, ratingValue, areaValue });
+
+    // 🧠 Generate embedding from cleaned query
+    const queryVector = await getEmbedding(cleanedQuery);
     if (!queryVector || !Array.isArray(queryVector) || queryVector.length < 100) {
       return res.status(500).json({
         success: false,
@@ -518,7 +566,10 @@ const boutiqueSearch = async function (req, res) {
       });
     }
 
-    // 🔹 Build $search pipeline
+    // 📝 Log search interaction
+    await logUserActivity(userId, "search", cleanedQuery, queryVector);
+
+    // 🔍 MongoDB $search pipeline
     const pipeline = [
       {
         $search: {
@@ -529,24 +580,8 @@ const boutiqueSearch = async function (req, res) {
           },
         },
       },
-
-      // 🔸 Optional filters
-      ...(ratingValue
-        ? [{
-            $match: {
-              averageRating: { $gte: ratingValue }
-            }
-          }]
-        : []),
-
-      ...(areaValue
-        ? [{
-            $match: {
-              area: { $regex: areaValue, $options: 'i' }
-            }
-          }]
-        : []),
-
+      ...(ratingValue ? [{ $match: { averageRating: { $gte: ratingValue } } }] : []),
+      ...(areaValue ? [{ $match: { area: { $regex: areaValue, $options: 'i' } } }] : []),
       {
         $project: {
           name: 1,
@@ -558,40 +593,34 @@ const boutiqueSearch = async function (req, res) {
           score: { $meta: 'searchScore' }
         },
       },
-
-      {
-        $sort: {
-          averageRating: -1,
-          score: -1
-        }
-      },
-
+      { $sort: { averageRating: -1, score: -1 } },
       { $limit: 10 }
     ];
 
-    // 🔍 Run aggregation
     const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
 
-    // ⛑️ Fallback if no results
-    if (boutiques.length === 0) {
-      console.warn("⚠️ Semantic Search returned no results. Trying fallback query...");
+    // ⛑️ Fallback if empty
+    if (!boutiques.length) {
+      console.warn("⚠️ Semantic search returned no results. Falling back...");
       const fallback = await BoutiqueModel.find()
         .limit(3)
-        .select("name area averageRating catalogue dressTypes")
-        .exec();
+        .select("name area averageRating catalogue dressTypes");
 
       return res.status(200).json({
-        message: "No matches found with semantic search. Showing fallback boutiques.",
-        results: fallback
+        message: "No semantic matches found. Showing fallback results.",
+        results: fallback,
       });
     }
 
-    // ✅ Success
-    res.status(200).json(boutiques);
+    // ✅ Send results
+    return res.status(200).json({
+      message: "Semantic search results",
+      results: boutiques,
+    });
 
   } catch (error) {
     console.error('Semantic Search Error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Server error. Unable to perform semantic search.',
     });
@@ -736,61 +765,75 @@ const deleteItemFromCatalogue = async (req, res) => {
 
 const getRecommendedBoutiques = async (req, res) => {
   try {
-    const userId = req.userId; // ✅ Extracted from JWT by middleware
+    const userId = req.userId;
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
-    // 📍 Get user location
     const user = await UserModel.findById(userId).lean();
-    if (!user || !user.address?.location?.lat || !user.address?.location?.lng) {
+    if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
       return res.status(400).json({ message: "User location is missing." });
     }
-    const userLocation = {
-      latitude: user.address.location.lat,
-      longitude: user.address.location.lng,
-    };
 
-    // 🎯 Get all boutiques
-    const boutiques = await BoutiqueModel.find()
+    const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
+
+    const allBoutiques = await BoutiqueModel.find()
       .select("name area dressTypes averageRating ratings headerImage location")
       .lean();
 
-    if (!boutiques || boutiques.length === 0) {
-      return res.status(404).json({ message: "No boutiques found." });
+    const boutiquesWithCoords = allBoutiques.filter(
+      b => b.location?.latitude && b.location?.longitude
+    );
+
+    if (boutiquesWithCoords.length === 0) {
+      return res.status(404).json({ message: "No boutiques with valid coordinates." });
     }
 
-    // 🧠 Score boutiques by rating + proximity
-    const scored = boutiques.map((boutique) => {
-      const boutiqueLocation = {
-        latitude: boutique.location.latitude,
-        longitude: boutique.location.longitude,
-      };
+    // 👇 Prepare destinations for Distance Matrix
+    const destinations = boutiquesWithCoords
+      .map(b => `${b.location.latitude},${b.location.longitude}`)
+      .join("|");
 
-      const distance = haversine(userLocation, boutiqueLocation); // in meters
-      const distanceKm = distance / 1000;
+    // 📦 Get actual distance from Google Maps
+    const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
+      params: {
+        origins: userLoc,
+        destinations,
+        key: GOOGLE_DISTANCE_MATRIX_KEY,
+        units: "metric",
+      },
+    });
+
+    const distances = distanceRes.data.rows[0]?.elements;
+    if (!distances || distances.length !== boutiquesWithCoords.length) {
+      return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
+    }
+
+    // 🧠 Score based on rating + actual road distance
+    const scored = boutiquesWithCoords.map((boutique, i) => {
+      const distanceKm = distances[i]?.distance?.value / 1000 || 100;
       const ratingScore = boutique.averageRating || 0;
-      const distanceScore = distanceKm > 30 ? 0 : 1 - distanceKm / 30; // 0–1
-
+      const distanceScore = distanceKm > 30 ? 0 : 1 - distanceKm / 30;
       const combinedScore = ratingScore * 0.6 + distanceScore * 0.4;
 
       return {
         ...boutique,
+        distanceKm: +distanceKm.toFixed(2),
         totalRating: boutique.ratings?.length || 0,
         combinedScore,
-        distanceKm: +distanceKm.toFixed(2),
       };
     });
 
+    // 📊 Sort by combined score (highest rating + closest)
     const sorted = scored
       .sort((a, b) => b.combinedScore - a.combinedScore)
       .slice(0, 10);
 
-    // 📝 Log top 5 viewed recommended boutique areas
+    // 📝 Log viewed top 5 recommended
     for (const { area, name } of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", `Boutique:${name}`, {
         source: "getRecommendedBoutiques",
-        reason: "Recommended by score (rating + distance)",
+        reason: "Recommended by rating and proximity",
       });
     }
 
@@ -798,15 +841,17 @@ const getRecommendedBoutiques = async (req, res) => {
       message: "Recommended boutiques fetched successfully.",
       recommendedBoutiques: sorted,
     });
+
   } catch (error) {
-    console.error(`Error fetching recommended boutiques for user ${req.userId}:`, error);
+    console.error(`Error fetching recommended boutiques for user ${req.userId}:`, error.message);
     return res.status(500).json({ message: "An error occurred while fetching boutiques" });
   }
 };
 
 
-
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
+
+const GOOGLE_DISTANCE_MATRIX_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 export const getRecommendedDressTypes = async (req, res) => {
   try {
@@ -814,95 +859,218 @@ export const getRecommendedDressTypes = async (req, res) => {
     if (!userId) return res.status(401).json({ message: "Unauthorized access." });
 
     const user = await UserModel.findById(userId).lean();
-    if (!user || !user.address?.location) {
+    if (!user || !user.address?.location?.lat || !user.address?.location?.lng) {
       return res.status(400).json({ message: "User location missing." });
     }
 
-    const userArea = user.address.formattedAddress?.split(",")[0]?.trim();
+    const userCoords = `${user.address.location.lat},${user.address.location.lng}`;
 
-    // Fetch all boutiques
+    // Step 1: Get boutiques with valid coordinates
     const boutiques = await BoutiqueModel.find().lean();
+    const boutiqueWithCoords = boutiques.filter(b => b.location?.latitude && b.location?.longitude);
 
-    // Rank boutiques by weighted factors: rating, location match, etc.
-    const boutiqueScores = boutiques.map(boutique => {
-      let score = 0;
+    if (boutiqueWithCoords.length === 0) {
+      return res.status(404).json({ message: "No valid boutique coordinates available." });
+    }
 
-      // 1. Rating influence
-      score += (boutique.averageRating || 0) * 2;
-
-      // 2. Location/area match
-      if (boutique.area === userArea) {
-        score += 3; // Strong location match
-      }
-
-      return {
-        ...boutique,
-        score,
-      };
+    // Step 2: Get distances from Google
+    const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
+    const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
+      params: {
+        origins: userCoords,
+        destinations,
+        key: GOOGLE_DISTANCE_MATRIX_KEY,
+      },
     });
 
-    // Sort by score descending
+    const distances = distanceRes.data?.rows?.[0]?.elements;
+    if (!distances) {
+      return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
+    }
+
+    // Step 3: Score boutiques using 75% rating, 25% distance
+    const boutiqueScores = boutiqueWithCoords.map((boutique, i) => {
+      const rating = boutique.averageRating || 0;
+      const distanceKm = (distances[i]?.distance?.value || 1000000) / 1000;
+
+      const score = (0.75 * rating) + (0.25 * (1 / (distanceKm + 1))); // Add 1 to avoid divide-by-zero
+      return { ...boutique, score };
+    });
+
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // Collect dressTypes from top boutiques
+    // Step 4: Aggregate dress types
     const allDressTypes = topBoutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));
     const uniqueDressTypes = [...new Set(allDressTypes)];
 
-    // Get embeddings for unique dress types
-    const embeddingResponse = await openai.post("/v1/embeddings", {
+    // Step 5: Get user embedding history
+    const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
+
+    if (userEmbeddings.length === 0) {
+      return res.status(200).json({
+        message: "No user activity yet. Showing trending dress types.",
+        dressTypes: uniqueDressTypes.map(type => ({ type, count: 1 })),
+      });
+    }
+
+    // Step 6: Get embeddings for dress types
+    const embeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
       input: uniqueDressTypes,
       model: "text-embedding-3-small",
-    });
-    const embeddings = embeddingResponse.data.data.map(item => item.embedding);
-
-    const canonicalResponse = await openai.post("/v1/embeddings", {
-      input: canonicalLabels,
-      model: "text-embedding-3-small",
-    });
-    const canonicalEmbeddings = canonicalResponse.data.data.map(item => item.embedding);
-
-    const labelMapping = {};
-    uniqueDressTypes.forEach((label, i) => {
-      let maxSim = -1, bestMatch = null;
-      canonicalLabels.forEach((canonical, j) => {
-        const sim = cosineSimilarity(embeddings[i], canonicalEmbeddings[j]);
-        if (sim > maxSim) {
-          maxSim = sim;
-          bestMatch = canonical;
-        }
-      });
-      labelMapping[label] = bestMatch;
+    }, {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
     });
 
-    // Count mapped labels from top boutiques
-    const labelCount = {};
-    allDressTypes.forEach(label => {
-      const mapped = labelMapping[label];
-      labelCount[mapped] = (labelCount[mapped] || 0) + 1;
+    const dressTypeEmbeddings = embeddingRes.data.data.map(d => d.embedding);
+
+    // Step 7: Score dress types by average similarity to recent activity
+    const relevanceScores = uniqueDressTypes.map((type, idx) => {
+      const score = userEmbeddings.reduce((sum, emb) => sum + cosineSimilarity(dressTypeEmbeddings[idx], emb), 0) / userEmbeddings.length;
+      return { type, relevance: score };
     });
 
-    const sorted = Object.entries(labelCount)
-      .sort((a, b) => b[1] - a[1])
-      .map(([type, count]) => ({ type, count }));
+    const sortedByRelevance = relevanceScores.sort((a, b) => b.relevance - a.relevance);
 
-    // Log top 5 viewed dress types
-    for (const { type } of sorted.slice(0, 5)) {
+    // Step 8: Log top 5 viewed dress types
+    for (const { type } of sortedByRelevance.slice(0, 5)) {
       await logUserActivity(userId, "view", type, {
         source: "getRecommendedDressTypes",
-        reason: "Ranked by rating + location",
+        reason: "Sorted by relevance + location + rating",
       });
     }
 
     res.status(200).json({
-      message: "Recommended dress types based on rating & location",
-      dressTypes: sorted,
+      message: "Recommended dress types using distance, rating and user activity",
+      dressTypes: sortedByRelevance,
     });
+
   } catch (err) {
     console.error("Error in getRecommendedDressTypes:", err.message);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
+export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const selectedType = req.params.dressType?.trim();
+
+    if (!userId || !selectedType) {
+      return res.status(400).json({ message: "Missing user ID or dress type." });
+    }
+
+    // Get user location
+    const user = await UserModel.findById(userId).lean();
+    if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
+      return res.status(400).json({ message: "User location is missing." });
+    }
+
+    const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
+
+    // Get all boutiques with valid coordinates
+    const allBoutiques = await BoutiqueModel.find().lean();
+    const boutiquesWithCoords = allBoutiques.filter(
+      b => b.location?.latitude && b.location?.longitude
+    );
+
+    if (boutiquesWithCoords.length === 0) {
+      return res.status(404).json({ message: "No valid boutique coordinates available." });
+    }
+
+    // Semantic embedding
+    const [selectedEmbeddingRes, canonicalEmbeddingRes] = await Promise.all([
+      openai.post("/v1/embeddings", {
+        input: selectedType,
+        model: "text-embedding-3-small",
+      }),
+      openai.post("/v1/embeddings", {
+        input: canonicalLabels,
+        model: "text-embedding-3-small",
+      }),
+    ]);
+
+    const selectedVector = selectedEmbeddingRes.data.data[0].embedding;
+
+    // Find closest canonical label
+    let bestMatch = null, bestSim = -1;
+    canonicalLabels.forEach((canonical, i) => {
+      const sim = cosineSimilarity(selectedVector, canonicalEmbeddingRes.data.data[i].embedding);
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestMatch = canonical;
+      }
+    });
+
+    // Filter only relevant boutiques offering this dress type
+    const relevantBoutiques = boutiquesWithCoords.filter(b =>
+      b.dressTypes.some(dt => dt.type?.trim().toLowerCase() === bestMatch.toLowerCase())
+    );
+
+    if (relevantBoutiques.length === 0) {
+      return res.status(404).json({ message: `No boutiques found offering ${bestMatch}.` });
+    }
+
+    // Prepare destinations for Distance Matrix API
+    const destinations = relevantBoutiques
+      .map(b => `${b.location.latitude},${b.location.longitude}`)
+      .join("|");
+
+    // Call Google Distance Matrix API
+    const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
+      params: {
+        origins: userLoc,
+        destinations,
+        key: GOOGLE_DISTANCE_MATRIX_KEY,
+        units: "metric",
+      },
+    });
+
+    const distances = distanceRes.data.rows[0]?.elements;
+    if (!distances || distances.length !== relevantBoutiques.length) {
+      return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
+    }
+
+    // Score based on rating and actual Google distance
+    const scored = relevantBoutiques.map((b, i) => {
+      const distanceKm = distances[i]?.distance?.value / 1000 || 100; // fallback 100 km if missing
+      const ratingScore = b.averageRating || 0;
+      const distanceScore = distanceKm > 30 ? 0 : 1 - distanceKm / 30;
+
+      const combinedScore = ratingScore * 0.6 + distanceScore * 0.4;
+
+      return {
+        ...b,
+        distanceKm: +distanceKm.toFixed(2),
+        combinedScore,
+      };
+    });
+
+    // Get top 5
+    const top = scored
+      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .slice(0, 5);
+
+    // Log viewed boutiques
+    for (const boutique of top) {
+      await logUserActivity(userId, "view", `Boutique:${boutique.name}`, {
+        source: "getTopRatedNearbyBoutiquesForDressType",
+        reason: `User searched for ${bestMatch}`,
+      });
+    }
+
+    return res.status(200).json({
+      message: `Top rated boutiques offering ${bestMatch}`,
+      dressType: bestMatch,
+      boutiques: top,
+    });
+
+  } catch (err) {
+    console.error("❌ Error in getTopRatedNearbyBoutiquesForDressType:", err.message);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
 
 
 const addDressType = async (req, res) => {

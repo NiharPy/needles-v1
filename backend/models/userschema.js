@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema({
     match: [/^\+91\d{10}$/, 'Please enter a valid phone number with +91 followed by 10 digits.'],
   },
   otp : {type : String, required : true},
+  refreshToken: { type: String },
   address: {
     flatNumber: { type: String, required: false },
     block: { type: String, required: false },

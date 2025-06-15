@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogue, getDressTypesWithDetails} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogue, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin, getAllBoutiqueAreas } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -55,7 +55,7 @@ router.route('/recommended').get(authMiddleware,getRecommendedDressTypes);//home
 
 router.get('/areas', authMiddleware,getAllBoutiqueAreas);//homepage
 
-//router.route('/:userId/recommended/:dressType').get(authMiddleware, getRecommendedDressTypes);
+router.get('/recommended/dressType/:dressType', authMiddleware, getTopRatedNearbyBoutiquesForDressType);//homepage
 
 router.route("/:userId/rate-order").post(authMiddleware, rateOrder);
 
