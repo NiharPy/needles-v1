@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { predefinedHyderabadAreas } from '../constants/areas.js'
 
 const boutiqueSchema = new mongoose.Schema({
   name: { type: String, required: true },

@@ -10,6 +10,8 @@ import BlacklistedToken from "../models/BlacklistedToken.js";
 import openai from "../utils/openai.js"; // axios client with API key
 import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to compute similarity
 import { predefinedHyderabadAreas } from '../constants/areas.js';
+import { logUserActivity } from "../controllers/recommendationController.js"
+import haversine from "haversine-distance";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -739,33 +741,66 @@ const getRecommendedBoutiques = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
-    const { area } = req.query; // Area is a top-level field
+    // 📍 Get user location
+    const user = await UserModel.findById(userId).lean();
+    if (!user || !user.address?.location?.lat || !user.address?.location?.lng) {
+      return res.status(400).json({ message: "User location is missing." });
+    }
+    const userLocation = {
+      latitude: user.address.location.lat,
+      longitude: user.address.location.lng,
+    };
 
-    const filter = area ? { area } : {}; // Simple top-level filter
-
-    const boutiques = await BoutiqueModel.find(filter)
-      .select('name area dressTypes averageRating ratings headerImage')
-      .sort({ averageRating: -1 })
-      .limit(10)
+    // 🎯 Get all boutiques
+    const boutiques = await BoutiqueModel.find()
+      .select("name area dressTypes averageRating ratings headerImage location")
       .lean();
 
     if (!boutiques || boutiques.length === 0) {
-      return res.status(404).json({ message: 'No boutiques found for the specified area' });
+      return res.status(404).json({ message: "No boutiques found." });
     }
 
-    // Add totalRating and remove the raw ratings array
-    boutiques.forEach(boutique => {
-      boutique.totalRating = boutique.ratings.length;
-      delete boutique.ratings;
+    // 🧠 Score boutiques by rating + proximity
+    const scored = boutiques.map((boutique) => {
+      const boutiqueLocation = {
+        latitude: boutique.location.latitude,
+        longitude: boutique.location.longitude,
+      };
+
+      const distance = haversine(userLocation, boutiqueLocation); // in meters
+      const distanceKm = distance / 1000;
+      const ratingScore = boutique.averageRating || 0;
+      const distanceScore = distanceKm > 30 ? 0 : 1 - distanceKm / 30; // 0–1
+
+      const combinedScore = ratingScore * 0.6 + distanceScore * 0.4;
+
+      return {
+        ...boutique,
+        totalRating: boutique.ratings?.length || 0,
+        combinedScore,
+        distanceKm: +distanceKm.toFixed(2),
+      };
     });
+
+    const sorted = scored
+      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .slice(0, 10);
+
+    // 📝 Log top 5 viewed recommended boutique areas
+    for (const { area, name } of sorted.slice(0, 5)) {
+      await logUserActivity(userId, "view", `Boutique:${name}`, {
+        source: "getRecommendedBoutiques",
+        reason: "Recommended by score (rating + distance)",
+      });
+    }
 
     return res.status(200).json({
       message: "Recommended boutiques fetched successfully.",
-      recommendedBoutiques: boutiques,
+      recommendedBoutiques: sorted,
     });
   } catch (error) {
     console.error(`Error fetching recommended boutiques for user ${req.userId}:`, error);
-    return res.status(500).json({ message: 'An error occurred while fetching boutiques' });
+    return res.status(500).json({ message: "An error occurred while fetching boutiques" });
   }
 };
 
@@ -773,35 +808,59 @@ const getRecommendedBoutiques = async (req, res) => {
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
 
-const getRecommendedDressTypes = async (req, res) => {
+export const getRecommendedDressTypes = async (req, res) => {
   try {
-    const userId = req.userId; // ✅ Extracted from JWT by middleware
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized access." });
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ message: "Unauthorized access." });
+
+    const user = await UserModel.findById(userId).lean();
+    if (!user || !user.address?.location) {
+      return res.status(400).json({ message: "User location missing." });
     }
 
-    // 1. Fetch all boutiques and collect dress type labels
-    const boutiques = await BoutiqueModel.find().select("dressTypes").lean();
-    const allDressTypes = boutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));
+    const userArea = user.address.formattedAddress?.split(",")[0]?.trim();
+
+    // Fetch all boutiques
+    const boutiques = await BoutiqueModel.find().lean();
+
+    // Rank boutiques by weighted factors: rating, location match, etc.
+    const boutiqueScores = boutiques.map(boutique => {
+      let score = 0;
+
+      // 1. Rating influence
+      score += (boutique.averageRating || 0) * 2;
+
+      // 2. Location/area match
+      if (boutique.area === userArea) {
+        score += 3; // Strong location match
+      }
+
+      return {
+        ...boutique,
+        score,
+      };
+    });
+
+    // Sort by score descending
+    const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
+
+    // Collect dressTypes from top boutiques
+    const allDressTypes = topBoutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));
     const uniqueDressTypes = [...new Set(allDressTypes)];
 
-    // 2. Get embeddings from OpenAI
+    // Get embeddings for unique dress types
     const embeddingResponse = await openai.post("/v1/embeddings", {
       input: uniqueDressTypes,
       model: "text-embedding-3-small",
     });
-
     const embeddings = embeddingResponse.data.data.map(item => item.embedding);
 
-    // 3. Get canonical label embeddings
     const canonicalResponse = await openai.post("/v1/embeddings", {
       input: canonicalLabels,
       model: "text-embedding-3-small",
     });
-
     const canonicalEmbeddings = canonicalResponse.data.data.map(item => item.embedding);
 
-    // 4. Map each unique dress type to closest canonical label
     const labelMapping = {};
     uniqueDressTypes.forEach((label, i) => {
       let maxSim = -1, bestMatch = null;
@@ -815,27 +874,35 @@ const getRecommendedDressTypes = async (req, res) => {
       labelMapping[label] = bestMatch;
     });
 
-    // 5. Count frequency of each canonical label
+    // Count mapped labels from top boutiques
     const labelCount = {};
     allDressTypes.forEach(label => {
       const mapped = labelMapping[label];
       labelCount[mapped] = (labelCount[mapped] || 0) + 1;
     });
 
-    // 6. Return top ordered canonical dress types
     const sorted = Object.entries(labelCount)
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => ({ type, count }));
 
+    // Log top 5 viewed dress types
+    for (const { type } of sorted.slice(0, 5)) {
+      await logUserActivity(userId, "view", type, {
+        source: "getRecommendedDressTypes",
+        reason: "Ranked by rating + location",
+      });
+    }
+
     res.status(200).json({
-      message: "Most ordered dress types (clustered)",
+      message: "Recommended dress types based on rating & location",
       dressTypes: sorted,
     });
   } catch (err) {
-    console.error("Error fetching recommended dress types:", err.message);
+    console.error("Error in getRecommendedDressTypes:", err.message);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+
 
 
 const addDressType = async (req, res) => {
@@ -1117,8 +1184,6 @@ export {getDressTypeImages};
 export {addDressType};
 
 export {deleteDressType};
-
-export {getRecommendedDressTypes};
 
 export { getRecommendedBoutiques };
 
