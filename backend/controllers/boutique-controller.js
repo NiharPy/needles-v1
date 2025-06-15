@@ -72,7 +72,7 @@ const CreateBoutique = async function (req, res) {
     `;
 
     // ✅ Get vector embedding
-    const embedding = await getEmbeddingForText(combinedText); // returns an array of numbers
+    const embedding = await getEmbedding(combinedText); // returns an array of numbers
 
     // ✅ Save embedding in the boutique document
     CreatedBoutique.embedding = embedding;
@@ -778,7 +778,7 @@ const getRecommendedBoutiques = async (req, res) => {
     const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
 
     const allBoutiques = await BoutiqueModel.find()
-      .select("name area dressTypes averageRating ratings headerImage location")
+      .select("name area dressTypes averageRating ratings headerImage location embedding")
       .lean();
 
     const boutiquesWithCoords = allBoutiques.filter(
@@ -829,12 +829,9 @@ const getRecommendedBoutiques = async (req, res) => {
       .sort((a, b) => b.combinedScore - a.combinedScore)
       .slice(0, 10);
 
-    // 📝 Log viewed top 5 recommended
-    for (const { area, name } of sorted.slice(0, 5)) {
-      await logUserActivity(userId, "view", `Boutique:${name}`, {
-        source: "getRecommendedBoutiques",
-        reason: "Recommended by rating and proximity",
-      });
+    // 📝 Log viewed top 5 recommended with embedding
+    for (const boutique of sorted.slice(0, 5)) {
+      await logUserActivity(userId, "view", `Boutique:${boutique.name}`, boutique.embedding);
     }
 
     return res.status(200).json({

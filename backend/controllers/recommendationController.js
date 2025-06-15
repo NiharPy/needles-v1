@@ -3,30 +3,28 @@ import { getEmbedding } from "../utils/embedingFuser.js";
 
 
 
-export const logUserActivity = async (userId, type, content) => {
-    try {
-      // ✅ Validate required fields
-      if (!userId || !type || !content) {
-        console.warn("Skipping logUserActivity due to missing fields");
-        return;
-      }
-  
-      // ✅ Get embedding of content
-      const embedding = await getEmbedding(content); // content can be "Boutique:Name" or "Lehenga"
-  
-      // ✅ Save the interaction
-      const log = new UserInteraction({
-        userId,
-        type,       // e.g. "view", "click"
-        content,    // e.g. "Boutique:Tailor House"
-        embedding,  // Required vector
-      });
-  
-      await log.save();
-    } catch (err) {
-      console.error("❌ Error logging user activity:", err.message);
+export const logUserActivity = async (userId, type, content, embedding = null) => {
+  try {
+    if (!userId || !type || !content) {
+      console.warn("Skipping logUserActivity due to missing fields");
+      return;
     }
-  };
+
+    // ⚠️ Compute embedding only if not supplied
+    const vector = embedding || await getEmbedding(content);
+
+    const log = new UserInteraction({
+      userId,
+      type,
+      content,
+      embedding: vector,
+    });
+
+    await log.save();
+  } catch (err) {
+    console.error("❌ Error logging user activity:", err.message);
+  }
+};
 
   export const getRecentUserEmbeddings = async (userId, actionType = "view", limit = 50) => {
     const recentInteractions = await UserInteraction.find({
