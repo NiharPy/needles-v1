@@ -857,7 +857,6 @@ const canonicalImageMap = [
   { label: "Choli", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009684/ciu9ddfyunzcmlaip1ig.png" },
 ];
 
-// Utility to normalize dress type labels
 const normalize = str => str.trim().toLowerCase();
 
 const imageMap = {};
@@ -886,17 +885,24 @@ export const getRecommendedDressTypes = async (req, res) => {
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
-    const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
-    const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
-      params: {
-        origins: userCoords,
-        destinations,
-        key: GOOGLE_DISTANCE_MATRIX_KEY,
-      },
-    });
-
-    const distances = distanceRes.data?.rows?.[0]?.elements;
-    if (!distances) {
+    // 🔐 GOOGLE API - wrapped safely
+    let distances;
+    try {
+      const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
+      const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
+        params: {
+          origins: userCoords,
+          destinations,
+          key: GOOGLE_DISTANCE_MATRIX_KEY,
+        },
+      });
+      distances = distanceRes.data?.rows?.[0]?.elements;
+      if (!distances) throw new Error("No distance data returned.");
+    } catch (err) {
+      console.error("Google Maps API Error:", err?.response?.data || err.message);
+      if (err.response?.status === 401) {
+        return res.status(500).json({ message: "Google Maps API Unauthorized. Check your API key." });
+      }
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
@@ -909,7 +915,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // STEP 1: Collect all raw dress types
+    // 🔍 STEP 1: Collect all raw dress types
     const rawTypes = [];
     topBoutiques.forEach(b => {
       (b.dressTypes || []).forEach(dt => {
@@ -918,29 +924,38 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     });
 
-    // STEP 2: Get embeddings for canonical labels
-    const canonicalEmbeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
-      input: canonicalLabels,
-      model: "text-embedding-3-small",
-    }, {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-    });
-    const canonicalEmbeddings = canonicalEmbeddingRes.data.data.map(d => d.embedding);
+    // 🔐 STEP 2 & 3: Get embeddings from OpenAI
+    let canonicalEmbeddings, rawEmbeddings;
+    try {
+      const [canonicalRes, rawRes] = await Promise.all([
+        axios.post("https://api.openai.com/v1/embeddings", {
+          input: canonicalLabels,
+          model: "text-embedding-3-small",
+        }, {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+        }),
+        axios.post("https://api.openai.com/v1/embeddings", {
+          input: rawTypes,
+          model: "text-embedding-3-small",
+        }, {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+        }),
+      ]);
+      canonicalEmbeddings = canonicalRes.data.data.map(d => d.embedding);
+      rawEmbeddings = rawRes.data.data.map(d => d.embedding);
+    } catch (err) {
+      console.error("OpenAI Embedding API Error:", err?.response?.data || err.message);
+      if (err.response?.status === 401) {
+        return res.status(500).json({ message: "OpenAI API Unauthorized. Check your API key or access level." });
+      }
+      return res.status(500).json({ message: "Failed to fetch embeddings from OpenAI." });
+    }
 
-    // STEP 3: Get embeddings for raw labels
-    const rawEmbeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
-      input: rawTypes,
-      model: "text-embedding-3-small",
-    }, {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-    });
-    const rawEmbeddings = rawEmbeddingRes.data.data.map(d => d.embedding);
-
-    // STEP 4: Match raw labels to closest canonical label
+    // 🔄 STEP 4: Match raw labels to canonical ones
     const canonicalCountMap = {};
     const canonicalRawTypes = new Set();
 
@@ -964,7 +979,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const uniqueLabels = [...canonicalRawTypes];
 
-    // STEP 5: Embed user history and rank recommendations
+    // 🧠 STEP 5: User history + scoring
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
     if (userEmbeddings.length === 0) {
@@ -978,16 +993,22 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     }
 
-    const labelEmbeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
-      input: uniqueLabels,
-      model: "text-embedding-3-small",
-    }, {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-    });
-
-    const labelEmbeddings = labelEmbeddingRes.data.data.map(d => d.embedding);
+    // STEP 6: Embed unique labels
+    let labelEmbeddings;
+    try {
+      const labelRes = await axios.post("https://api.openai.com/v1/embeddings", {
+        input: uniqueLabels,
+        model: "text-embedding-3-small",
+      }, {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+      });
+      labelEmbeddings = labelRes.data.data.map(d => d.embedding);
+    } catch (err) {
+      console.error("OpenAI Embedding (labels) Error:", err?.response?.data || err.message);
+      return res.status(500).json({ message: "Failed to embed dress type labels." });
+    }
 
     const relevanceScores = uniqueLabels.map((label, idx) => {
       const avgSim = userEmbeddings.reduce((sum, emb) => {
