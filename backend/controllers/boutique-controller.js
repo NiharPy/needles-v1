@@ -848,6 +848,17 @@ const getRecommendedBoutiques = async (req, res) => {
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
 
+const canonicalImageMap = [
+  { label: "Lehenga", imageUrl: "https://res.cloudinary.com/.../lehenga.jpg" },
+  { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/.../saree_blouse.jpg" },
+  { label: "Kurta", imageUrl: "https://res.cloudinary.com/.../kurta.jpg" },
+  { label: "Gown", imageUrl: "https://res.cloudinary.com/.../gown.jpg" },
+  { label: "Shirt", imageUrl: "https://res.cloudinary.com/.../shirt.jpg" },
+  { label: "Sherwani", imageUrl: "https://res.cloudinary.com/.../sherwani.jpg" },
+  { label: "Choli", imageUrl: "https://res.cloudinary.com/.../choli.jpg" },
+];
+
+
 const GOOGLE_DISTANCE_MATRIX_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 export const getRecommendedDressTypes = async (req, res) => {
@@ -856,13 +867,12 @@ export const getRecommendedDressTypes = async (req, res) => {
     if (!userId) return res.status(401).json({ message: "Unauthorized access." });
 
     const user = await UserModel.findById(userId).lean();
-    if (!user || !user.address?.location?.lat || !user.address?.location?.lng) {
+    if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
       return res.status(400).json({ message: "User location missing." });
     }
 
     const userCoords = `${user.address.location.lat},${user.address.location.lng}`;
 
-    // Step 1: Get boutiques with valid coordinates
     const boutiques = await BoutiqueModel.find().lean();
     const boutiqueWithCoords = boutiques.filter(b => b.location?.latitude && b.location?.longitude);
 
@@ -870,7 +880,6 @@ export const getRecommendedDressTypes = async (req, res) => {
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
-    // Step 2: Get distances from Google
     const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
     const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
       params: {
@@ -885,34 +894,48 @@ export const getRecommendedDressTypes = async (req, res) => {
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
-    // Step 3: Score boutiques using 75% rating, 25% distance
     const boutiqueScores = boutiqueWithCoords.map((boutique, i) => {
       const rating = boutique.averageRating || 0;
       const distanceKm = (distances[i]?.distance?.value || 1000000) / 1000;
-
-      const score = (0.75 * rating) + (0.25 * (1 / (distanceKm + 1))); // Add 1 to avoid divide-by-zero
+      const score = (0.75 * rating) + (0.25 * (1 / (distanceKm + 1)));
       return { ...boutique, score };
     });
 
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // Step 4: Aggregate dress types
-    const allDressTypes = topBoutiques.flatMap(b => b.dressTypes.map(dt => dt.type.trim()));
-    const uniqueDressTypes = [...new Set(allDressTypes)];
+    // 👗 Aggregate dress types under canonical labels
+    const canonicalCountMap = {};
+    const canonicalRawTypes = new Set();
 
-    // Step 5: Get user embedding history
+    topBoutiques.forEach(b => {
+      (b.dressTypes || []).forEach(dt => {
+        const rawType = dt.type?.trim();
+        if (!rawType) return;
+        const canonical = canonicalMapping[rawType.toLowerCase()] || rawType;
+        canonicalRawTypes.add(canonical);
+        canonicalCountMap[canonical] = (canonicalCountMap[canonical] || 0) + 1;
+      });
+    });
+
+    const uniqueLabels = [...canonicalRawTypes];
+
+    // 🧠 Fetch user's recent embeddings
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
     if (userEmbeddings.length === 0) {
       return res.status(200).json({
         message: "No user activity yet. Showing trending dress types.",
-        dressTypes: uniqueDressTypes.map(type => ({ type, count: 1 })),
+        dressTypes: uniqueLabels.map(label => ({
+          label,
+          imageUrl: canonicalImageMap[label] || null,
+          count: canonicalCountMap[label] || 1,
+        })),
       });
     }
 
-    // Step 6: Get embeddings for dress types
+    // 🔍 Get embeddings for the labels
     const embeddingRes = await axios.post("https://api.openai.com/v1/embeddings", {
-      input: uniqueDressTypes,
+      input: uniqueLabels,
       model: "text-embedding-3-small",
     }, {
       headers: {
@@ -920,19 +943,27 @@ export const getRecommendedDressTypes = async (req, res) => {
       },
     });
 
-    const dressTypeEmbeddings = embeddingRes.data.data.map(d => d.embedding);
+    const labelEmbeddings = embeddingRes.data.data.map(d => d.embedding);
 
-    // Step 7: Score dress types by average similarity to recent activity
-    const relevanceScores = uniqueDressTypes.map((type, idx) => {
-      const score = userEmbeddings.reduce((sum, emb) => sum + cosineSimilarity(dressTypeEmbeddings[idx], emb), 0) / userEmbeddings.length;
-      return { type, relevance: score };
+    // 🔁 Score labels by relevance to user activity
+    const relevanceScores = uniqueLabels.map((label, idx) => {
+      const similarity = userEmbeddings.reduce((sum, emb) => {
+        return sum + cosineSimilarity(labelEmbeddings[idx], emb);
+      }, 0) / userEmbeddings.length;
+
+      return {
+        label,
+        imageUrl: canonicalImageMap[label] || null,
+        count: canonicalCountMap[label] || 1,
+        relevance: similarity,
+      };
     });
 
-    const sortedByRelevance = relevanceScores.sort((a, b) => b.relevance - a.relevance);
+    const sorted = relevanceScores.sort((a, b) => b.relevance - a.relevance);
 
-    // Step 8: Log top 5 viewed dress types
-    for (const { type } of sortedByRelevance.slice(0, 5)) {
-      await logUserActivity(userId, "view", type, {
+    // 📝 Log top 5
+    for (const { label } of sorted.slice(0, 5)) {
+      await logUserActivity(userId, "view", label, {
         source: "getRecommendedDressTypes",
         reason: "Sorted by relevance + location + rating",
       });
@@ -940,7 +971,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     res.status(200).json({
       message: "Recommended dress types using distance, rating and user activity",
-      dressTypes: sortedByRelevance,
+      dressTypes: sorted,
     });
 
   } catch (err) {
