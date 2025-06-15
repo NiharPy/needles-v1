@@ -846,16 +846,15 @@ const getRecommendedBoutiques = async (req, res) => {
 };
 
 
-const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Shirt", "Sherwani", "Choli"];
+const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Sherwani", "Choli"];
 
 const canonicalImageMap = [
-  { label: "Lehenga", imageUrl: "https://res.cloudinary.com/.../lehenga.jpg" },
-  { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/.../saree_blouse.jpg" },
-  { label: "Kurta", imageUrl: "https://res.cloudinary.com/.../kurta.jpg" },
-  { label: "Gown", imageUrl: "https://res.cloudinary.com/.../gown.jpg" },
-  { label: "Shirt", imageUrl: "https://res.cloudinary.com/.../shirt.jpg" },
-  { label: "Sherwani", imageUrl: "https://res.cloudinary.com/.../sherwani.jpg" },
-  { label: "Choli", imageUrl: "https://res.cloudinary.com/.../choli.jpg" },
+  { label: "Lehenga", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750006122/kclivthf8zch7iuoan0w.png" },
+  { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750008468/zdoim8ei442krnqfpdqn.png" },
+  { label: "Kurta", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009018/iibnx4qavyeqjlddgo7v.png" },
+  { label: "Gown", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009232/jusfhpyhzwefnpjptyyb.png" },
+  { label: "Sherwani", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009421/tgzz5dch348vdgiqtunx.png" },
+  { label: "Choli", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009684/ciu9ddfyunzcmlaip1ig.png" },
 ];
 
 // Utility to normalize dress type labels
