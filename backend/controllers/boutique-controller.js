@@ -9,6 +9,7 @@ import { getEmbedding } from '../utils/embedding.js';
 import BlacklistedToken from "../models/BlacklistedToken.js";
 import openai from "../utils/openai.js"; // axios client with API key
 import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to compute similarity
+import { predefinedHyderabadAreas } from '../constants/areas.js';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -182,8 +183,17 @@ export const updateBoutiqueDetails = async (req, res) => {
     // ✅ Update name
     if (name) updateFields.name = name;
 
-    // ✅ Update area
-    if (area) updateFields.area = area;
+    // ✅ Validate and update area
+    if (area) {
+      const trimmedArea = area.trim();
+      if (!predefinedHyderabadAreas.includes(trimmedArea)) {
+        return res.status(400).json({
+          message: `Invalid area. Choose from predefined Hyderabad areas only.`,
+          allowedAreas: predefinedHyderabadAreas,
+        });
+      }
+      updateFields.area = trimmedArea;
+    }
 
     // ✅ Update location subfields
     if (location) {
@@ -220,6 +230,7 @@ export const updateBoutiqueDetails = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export const requestPhoneNumberChange = async (req, res) => {
   try {
@@ -1061,6 +1072,38 @@ export const logoutBoutique = async (req, res) => {
   } catch (error) {
     console.error("Logout error:", error.message);
     res.status(500).json({ message: "Logout failed", error: error.message });
+  }
+};
+
+
+export const getBoutiqueAreas = async (req, res) => {
+  try {
+    const boutiqueId = req.boutiqueId;
+
+    if (!boutiqueId) {
+      return res.status(401).json({ message: "Unauthorized. Boutique ID missing from token." });
+    }
+
+    // ✅ Get all boutique areas
+    const boutiques = await BoutiqueModel.find({}, 'area').lean();
+    
+    // Filter areas that are defined in enum list
+    const usedAreas = [
+      ...new Set(
+        boutiques
+          .map(b => b.area?.trim())
+          .filter(area => predefinedHyderabadAreas.includes(area))
+      ),
+    ];
+
+    res.status(200).json({
+      success: true,
+      message: "All boutique areas (filtered from predefined list)",
+      areas: usedAreas,
+    });
+  } catch (err) {
+    console.error("Error fetching boutique areas:", err.message);
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 

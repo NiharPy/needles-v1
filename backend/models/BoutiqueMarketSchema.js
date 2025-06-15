@@ -29,7 +29,14 @@ const boutiqueSchema = new mongoose.Schema({
     longitude: { type: Number },
   },
 
-  area: { type: String },
+  area: {
+    type: String,
+    enum: {
+      values: predefinedHyderabadAreas,
+      message: 'Area must be one of the predefined Hyderabad areas.'
+    },
+    required: true
+  },
 
   // 🖼️ Header image for boutique profile
   headerImage: {
