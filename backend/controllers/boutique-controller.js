@@ -13,6 +13,8 @@ import { predefinedHyderabadAreas } from '../constants/areas.js';
 import { logUserActivity, getRecentUserEmbeddings} from "../controllers/recommendationController.js"
 import haversine from "haversine-distance";
 import axios from "axios";
+import dotenv from 'dotenv';
+dotenv.config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -847,7 +849,6 @@ const getRecommendedBoutiques = async (req, res) => {
 
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Sherwani", "Choli"];
-
 const canonicalImageMap = [
   { label: "Lehenga", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750006122/kclivthf8zch7iuoan0w.png" },
   { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750008468/zdoim8ei442krnqfpdqn.png" },
@@ -857,13 +858,11 @@ const canonicalImageMap = [
   { label: "Choli", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009684/ciu9ddfyunzcmlaip1ig.png" },
 ];
 
+// Normalize image map
 const normalize = str => str.trim().toLowerCase();
+const imageMap = Object.fromEntries(canonicalImageMap.map(({ label, imageUrl }) => [normalize(label), imageUrl]));
 
-const imageMap = {};
-canonicalImageMap.forEach(({ label, imageUrl }) => {
-  imageMap[normalize(label)] = imageUrl;
-});
-
+// Google API Key
 const GOOGLE_DISTANCE_MATRIX_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 export const getRecommendedDressTypes = async (req, res) => {
@@ -878,44 +877,40 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const userCoords = `${user.address.location.lat},${user.address.location.lng}`;
 
+    // Get boutiques with valid coords
     const boutiques = await BoutiqueModel.find().lean();
     const boutiqueWithCoords = boutiques.filter(b => b.location?.latitude && b.location?.longitude);
 
-    if (boutiqueWithCoords.length === 0) {
+    if (!boutiqueWithCoords.length) {
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
-    // 🔐 GOOGLE API - wrapped safely
-    let distances;
-    try {
-      const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
-      const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
-        params: {
-          origins: userCoords,
-          destinations,
-          key: GOOGLE_DISTANCE_MATRIX_KEY,
-        },
-      });
-      distances = distanceRes.data?.rows?.[0]?.elements;
-      if (!distances) throw new Error("No distance data returned.");
-    } catch (err) {
-      console.error("Google Maps API Error:", err?.response?.data || err.message);
-      if (err.response?.status === 401) {
-        return res.status(500).json({ message: "Google Maps API Unauthorized. Check your API key." });
-      }
+    const destinations = boutiqueWithCoords.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
+
+    const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
+      params: {
+        origins: userCoords,
+        destinations,
+        key: GOOGLE_DISTANCE_MATRIX_KEY,
+      },
+    });
+
+    const distances = distanceRes.data?.rows?.[0]?.elements;
+    if (!distances) {
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
+    // Boutique score calculation
     const boutiqueScores = boutiqueWithCoords.map((boutique, i) => {
       const rating = boutique.averageRating || 0;
-      const distanceKm = (distances[i]?.distance?.value || 1000000) / 1000;
-      const score = (0.75 * rating) + (0.25 * (1 / (distanceKm + 1)));
+      const distanceKm = (distances[i]?.distance?.value || 1e6) / 1000;
+      const score = 0.75 * rating + 0.25 * (1 / (distanceKm + 1));
       return { ...boutique, score };
     });
 
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // 🔍 STEP 1: Collect all raw dress types
+    // STEP 1: Gather raw dress types
     const rawTypes = [];
     topBoutiques.forEach(b => {
       (b.dressTypes || []).forEach(dt => {
@@ -924,38 +919,36 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     });
 
-    // 🔐 STEP 2 & 3: Get embeddings from OpenAI
-    let canonicalEmbeddings, rawEmbeddings;
-    try {
-      const [canonicalRes, rawRes] = await Promise.all([
-        axios.post("https://api.openai.com/v1/embeddings", {
-          input: canonicalLabels,
-          model: "text-embedding-3-small",
-        }, {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-        }),
-        axios.post("https://api.openai.com/v1/embeddings", {
-          input: rawTypes,
-          model: "text-embedding-3-small",
-        }, {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-        }),
-      ]);
-      canonicalEmbeddings = canonicalRes.data.data.map(d => d.embedding);
-      rawEmbeddings = rawRes.data.data.map(d => d.embedding);
-    } catch (err) {
-      console.error("OpenAI Embedding API Error:", err?.response?.data || err.message);
-      if (err.response?.status === 401) {
-        return res.status(500).json({ message: "OpenAI API Unauthorized. Check your API key or access level." });
-      }
-      return res.status(500).json({ message: "Failed to fetch embeddings from OpenAI." });
+    if (!rawTypes.length) {
+      return res.status(200).json({ message: "No dress types available near you." });
     }
 
-    // 🔄 STEP 4: Match raw labels to canonical ones
+    // STEP 2: Embed canonical and raw labels
+    const [canonicalRes, rawRes] = await Promise.all([
+      axios.post("https://api.openai.com/v1/embeddings", {
+        input: canonicalLabels,
+        model: "text-embedding-3-small",
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+      }),
+      axios.post("https://api.openai.com/v1/embeddings", {
+        input: rawTypes,
+        model: "text-embedding-3-small",
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+      }),
+    ]);
+
+    const canonicalEmbeddings = canonicalRes.data.data.map(d => d.embedding);
+    const rawEmbeddings = rawRes.data.data.map(d => d.embedding);
+
+    // STEP 3: Match raw types to canonical
     const canonicalCountMap = {};
     const canonicalRawTypes = new Set();
 
@@ -979,10 +972,10 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const uniqueLabels = [...canonicalRawTypes];
 
-    // 🧠 STEP 5: User history + scoring
+    // STEP 4: User embedding personalization
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
-    if (userEmbeddings.length === 0) {
+    if (!userEmbeddings.length) {
       return res.status(200).json({
         message: "No user activity yet. Showing trending dress types.",
         dressTypes: uniqueLabels.map(label => ({
@@ -993,28 +986,20 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     }
 
-    // STEP 6: Embed unique labels
-    let labelEmbeddings;
-    try {
-      const labelRes = await axios.post("https://api.openai.com/v1/embeddings", {
-        input: uniqueLabels,
-        model: "text-embedding-3-small",
-      }, {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      });
-      labelEmbeddings = labelRes.data.data.map(d => d.embedding);
-    } catch (err) {
-      console.error("OpenAI Embedding (labels) Error:", err?.response?.data || err.message);
-      return res.status(500).json({ message: "Failed to embed dress type labels." });
-    }
+    const labelRes = await axios.post("https://api.openai.com/v1/embeddings", {
+      input: uniqueLabels,
+      model: "text-embedding-3-small",
+    }, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+    });
+
+    const labelEmbeddings = labelRes.data.data.map(d => d.embedding);
 
     const relevanceScores = uniqueLabels.map((label, idx) => {
-      const avgSim = userEmbeddings.reduce((sum, emb) => {
-        return sum + cosineSimilarity(labelEmbeddings[idx], emb);
-      }, 0) / userEmbeddings.length;
-
+      const avgSim = userEmbeddings.reduce((sum, emb) => sum + cosineSimilarity(labelEmbeddings[idx], emb), 0) / userEmbeddings.length;
       return {
         label,
         imageUrl: imageMap[normalize(label)] || null,
@@ -1025,6 +1010,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const sorted = relevanceScores.sort((a, b) => b.relevance - a.relevance);
 
+    // STEP 5: Log user activity
     for (const { label } of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", label, {
         source: "getRecommendedDressTypes",
@@ -1032,14 +1018,17 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Recommended dress types using distance, rating and user activity",
       dressTypes: sorted,
     });
 
   } catch (err) {
-    console.error("Error in getRecommendedDressTypes:", err.message);
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error("Error in getRecommendedDressTypes:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err?.response?.data || err.message,
+    });
   }
 };
 
