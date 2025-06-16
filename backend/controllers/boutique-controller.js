@@ -704,7 +704,7 @@ const viewBoutiqueDetails = async (req, res) => {
         console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
       }
 
-      return res.status(200).json({ boutique: cached });
+      return res.status(200).json({ boutique: JSON.parse(cached) });
     }
 
     // 🧠 Fetch from MongoDB if not in cache
@@ -713,8 +713,8 @@ const viewBoutiqueDetails = async (req, res) => {
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // 🗂️ Cache boutique data in Redis (1 hour TTL)
-    await redis.set(cacheKey, boutique, { ex: 3600 });
+    // 🗂️ Cache boutique data in Redis (3 minutes TTL)
+    await redis.set(cacheKey, JSON.stringify(boutique), { ex: 180 });
 
     if (req.userId) {
       console.log(`User ID: ${req.userId} is viewing boutique: ${boutiqueId}`);
