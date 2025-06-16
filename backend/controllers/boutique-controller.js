@@ -850,12 +850,12 @@ const getRecommendedBoutiques = async (req, res) => {
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Sherwani", "Choli"];
 const canonicalImageMap = [
-  { label: "Lehenga", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750006122/kclivthf8zch7iuoan0w.png" },
-  { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750008468/zdoim8ei442krnqfpdqn.png" },
-  { label: "Kurta", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009018/iibnx4qavyeqjlddgo7v.png" },
-  { label: "Gown", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009232/jusfhpyhzwefnpjptyyb.png" },
-  { label: "Sherwani", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009421/tgzz5dch348vdgiqtunx.png" },
-  { label: "Choli", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750009684/ciu9ddfyunzcmlaip1ig.png" },
+  { label: "Lehenga", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/l9z0s4ew2m9zsucdgq8e.png" },
+  { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/ptlfdfyo8b75ktk6lbtl.png" },
+  { label: "Kurta", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/khaa81e5f66jvsselfo7.png" },
+  { label: "Gown", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053855/Hardcoded/bzdf9expco5fmddww0mi.png" },
+  { label: "Sherwani", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/uab8xghclydm1cbk2bo0.png" },
+  { label: "Choli", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/ie573v0kfw6yshttdeep.png" },
 ];
 
 // Normalize image map
