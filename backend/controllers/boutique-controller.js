@@ -572,28 +572,17 @@ const boutiqueSearch = async function (req, res) {
     const pipeline = [
       {
         $search: {
-          compound: {
-            should: [
-              {
-                knnBeta: {
-                  path: "embedding",
-                  vector: queryVector,
-                  k: 20,
-                },
-              },
-              {
-                text: {
-                  query: cleanedQuery,
-                  path: ["name", "dressTypes.type", "catalogue.itemName"],
-                  fuzzy: { maxEdits: 1 },
-                },
-              },
-            ],
-          },
-        },
+          knnBeta: {
+            path: 'embedding',
+            vector: queryVector,
+            k: 20,
+            filter: {
+              ...(ratingValue && { averageRating: { $gte: ratingValue } }),
+              ...(areaValue && { area: { $regex: areaValue, $options: 'i' } }),
+            }
+          }
+        }
       },
-      ...(ratingValue ? [{ $match: { averageRating: { $gte: ratingValue } } }] : []),
-      ...(areaValue ? [{ $match: { area: { $regex: areaValue, $options: 'i' } } }] : []),
       {
         $project: {
           name: 1,
@@ -603,10 +592,10 @@ const boutiqueSearch = async function (req, res) {
           catalogue: 1,
           dressTypes: 1,
           score: { $meta: 'searchScore' }
-        },
+        }
       },
-      { $sort: { score: -1, averageRating: -1 } },
-      { $limit: 10 },
+      { $sort: { averageRating: -1, score: -1 } },
+      { $limit: 10 }
     ];
 
     const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
