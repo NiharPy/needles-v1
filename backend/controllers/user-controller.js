@@ -166,7 +166,7 @@ const verifyOtp = async (req, res) => {
   // Controller to update user's location
   const updateUserLocation = async (req, res) => {
     try {
-      const { userId } = req.params;
+      const userId = req.userId; // ✅ Injected from JWT
       console.log("Received userId:", userId, "Type of userId:", typeof userId);
   
       const { lat, lng, flatNumber, block, street } = req.body;
@@ -190,10 +190,10 @@ const verifyOtp = async (req, res) => {
       let formattedAddress = null;
       if (lat && lng) {
         try {
-          formattedAddress = await getPlaceNameFromLatLng(lat, lng);  // Directly get the formatted address
+          formattedAddress = await getPlaceNameFromLatLng(lat, lng); // Directly get the formatted address
           console.log("Formatted Address Found:", formattedAddress); // Log the formatted address
           if (!formattedAddress) {
-            formattedAddress = "Address not found";  // Fallback if no formatted address
+            formattedAddress = "Address not found"; // Fallback if no formatted address
             console.log("No formatted address found.");
           }
         } catch (error) {
@@ -232,7 +232,7 @@ const verifyOtp = async (req, res) => {
       console.error("Error updating user location:", error.message);
       res.status(500).json({ error: "An unexpected error occurred" });
     }
-  };
+  };  
   
 
   const UserLogout = async function (req, res) {

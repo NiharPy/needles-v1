@@ -1,7 +1,7 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin, getAllBoutiqueAreas } from '../controllers/user-controller.js';
-import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
+import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewPaidOrders, viewPendingOrders ,viewBill, cancelOrder, rejectOrderBill, markBillAsPaid } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages, viewODDOrders, getODDOrderDetails} from '../controllers/ODdelivery-controller.js';
@@ -34,20 +34,26 @@ router.route("/boutique/:boutiqueId").get(authMiddleware, viewBoutiqueDetails);
 
 router.route("/:boutiqueId/catalogue").get(authMiddleware,getBoutiqueCatalogueFU);
 
-router.route('/:userId/order/place').post(authMiddleware, upload.fields([
+router.route('/order/place').post(authMiddleware, upload.fields([
   { name: 'referralImage', maxCount: 1 },
   { name: 'voiceNotes', maxCount: 5 }
 ]), placeOrder);
 
-router.route('/:userId/location').put(authMiddleware,updateUserLocation);
+router.route('/location').put(authMiddleware,updateUserLocation);
 
-router.route('/:userId/order').get(authMiddleware,viewOrders);
+router.route('/order/Paid').get(authMiddleware,viewPaidOrders);
 
-router.route('/:userId/order/:orderId/cancel').delete(authMiddleware, cancelOrder);
+router.route('/order/Pending').get(authMiddleware,viewPendingOrders);
 
-router.route('/:userId/order/:orderId').get(authMiddleware,getOrderDetails);
+router.route('/order/Pending/:orderId/Bill/Reject').get(authMiddleware,rejectOrderBill);//billviewing TAB, pop up
 
-router.route('/:userId/order/:orderId/bill').get(authMiddleware,viewBill);
+router.route('/order/Pending/:orderId/Bill/Pay').get(authMiddleware,markBillAsPaid);//billviewing TAB, pop up
+
+router.route('/order/:orderId/cancel').delete(authMiddleware, cancelOrder);
+
+router.route('/order/:orderId/Details').get(authMiddleware,getOrderDetails);// for both pending and paid orders
+
+router.route('/order/:orderId/bill').get(authMiddleware,viewBill);////billviewing TAB, pop up
 
 router.route('/Boutiques/recommended').get(authMiddleware,getRecommendedBoutiques);//homepage
 
@@ -57,7 +63,7 @@ router.get('/areas', authMiddleware,getAllBoutiqueAreas);//homepage
 
 router.get('/recommended/dressType/:dressType', authMiddleware, getTopRatedNearbyBoutiquesForDressType);//homepage
 
-router.route("/:userId/rate-order").post(authMiddleware, rateOrder);
+router.route("/rate-order").post(authMiddleware, rateOrder);
 
 router.route("/:userId/orders/alterations").get(getUserAlterationRequests);
 

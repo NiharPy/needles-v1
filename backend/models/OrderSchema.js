@@ -77,7 +77,11 @@ const orderSchema = new mongoose.Schema({
       reason: { type: String, default: "" },
     },
     totalAmount: { type: Number, default: 0 },
-    status: { type: String, default: "Pending" },
+    status: {
+      type: String,
+      enum: ["Pending", "Rejected", "Paid"],
+      default: "Pending"
+    },
   },
   createdAt: { type: Date, default: Date.now },
 });

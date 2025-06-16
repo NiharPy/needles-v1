@@ -181,46 +181,40 @@ const placeOrder = async (req, res) => {
 const cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { userId } = req.body; // Assuming userId is provided in the request body
+    const userId = req.userId; // ✅ Now extracted from JWT
 
-    // Find the order
     const order = await OrderModel.findById(orderId);
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // Ensure the request is coming from the correct user
     if (order.userId.toString() !== userId) {
       return res.status(403).json({ message: "Unauthorized request" });
     }
 
-    // Check if the order is already cancelled or completed
     if (order.status === "Cancelled") {
       return res.status(400).json({ message: "Order has already been cancelled" });
     }
+
     if (order.status === "Accepted" || order.status === "Completed") {
       return res.status(400).json({ message: "Order cannot be cancelled after acceptance" });
     }
 
-    // Check if the cancellation request is within 4 hours
     const orderTime = new Date(order.createdAt);
     const currentTime = new Date();
-    const timeDifference = (currentTime - orderTime) / (1000 * 60 * 60); // Convert to hours
+    const timeDifference = (currentTime - orderTime) / (1000 * 60 * 60);
 
     if (timeDifference > 4) {
       return res.status(400).json({ message: "Cancellation window expired. You can no longer cancel this order" });
     }
 
-    // Update order status
     order.status = "Cancelled";
     await order.save();
 
-    // Remove the order from User's orders list
     await UserModel.findByIdAndUpdate(order.userId, {
       $pull: { orders: { orderId: order._id } },
     });
 
-    // Remove the order from Boutique's orders list
     await BoutiqueModel.findByIdAndUpdate(order.boutiqueId, {
       $pull: { orders: { orderId: order._id } },
     });
@@ -233,26 +227,23 @@ const cancelOrder = async (req, res) => {
   }
 };
 
-
-const viewOrders = async (req, res) => {
+const viewPaidOrders = async (req, res) => {
   try {
-    const { userId } = req.params; // Get the user ID from request parameters
+    const userId = req.userId; // Injected from JWT by authMiddleware
 
-    // Find all orders where status is "Paid"
-    const paidOrders = await OrderModel.find({ userId, status: "Paid" })
-      .populate("boutiqueId", "name") // Fetch boutique name
-      .select("referralImage _id boutiqueId bill.totalAmount status") // Select necessary fields
+    const paidOrders = await OrderModel.find({ userId, "bill.status": "Paid" }) // Use bill.status here
+      .populate("boutiqueId", "name")
+      .select("referralImage _id boutiqueId bill.totalAmount bill.status");
 
     if (!paidOrders.length) {
       return res.status(404).json({ message: "No paid orders found" });
     }
 
-    // Format the response
     const formattedOrders = paidOrders.map(order => ({
       orderId: order._id,
       boutiqueName: order.boutiqueId.name,
       amount: order.bill.totalAmount,
-      status: order.status,
+      status: order.bill.status,
       referralImage: order.referralImage
     }));
 
@@ -353,7 +344,104 @@ const updateOrderStatus = async (req, res) => {
   }
 };
 
+export const viewPendingOrders = async (req, res) => {
+  try {
+    const userId = req.userId; // Injected by authMiddleware
 
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+
+    const pendingOrders = await OrderModel.find({
+      userId,
+      "bill.status": "Pending",
+      "bill.generatedAt": { $gte: oneHourAgo }  // 👈 Only show recent pending orders
+    })
+      .populate("boutiqueId", "name")
+      .select("referralImage _id boutiqueId bill.totalAmount bill.status");
+
+    if (!pendingOrders.length) {
+      return res.status(404).json({ message: "No recent pending orders found" });
+    }
+
+    const formattedOrders = pendingOrders.map(order => ({
+      orderId: order._id,
+      boutiqueName: order.boutiqueId.name,
+      amount: order.bill.totalAmount,
+      status: order.bill.status,
+      referralImage: order.referralImage
+    }));
+
+    res.status(200).json({
+      message: "Pending orders retrieved successfully",
+      orders: formattedOrders
+    });
+
+  } catch (error) {
+    console.error("Error fetching pending orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
+export const rejectOrderBill = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (order.bill.status !== "Pending") {
+      return res.status(400).json({ message: `Cannot reject a ${order.bill.status.toLowerCase()} bill.` });
+    }
+
+    order.bill.status = "Rejected";
+    await order.save();
+
+    res.status(200).json({
+      message: "Bill status updated to Rejected",
+      orderId: order._id,
+      status: order.bill.status
+    });
+  } catch (error) {
+    console.error("Error rejecting bill:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const markBillAsPaid = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.userId; // ✅ Injected from JWT middleware
+
+    // 🔎 Find order and ensure it belongs to this user
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.userId.toString() !== userId) {
+      return res.status(403).json({ message: "Unauthorized to update this order." });
+    }
+
+    if (order.bill.status === "Paid") {
+      return res.status(400).json({ message: "This bill is already marked as Paid." });
+    }
+
+    // ✅ Update bill status
+    order.bill.status = "Paid";
+    await order.save();
+
+    res.status(200).json({
+      message: "Bill marked as Paid successfully.",
+      orderId: order._id,
+      billStatus: order.bill.status,
+    });
+  } catch (error) {
+    console.error("Error marking bill as paid:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
 
 
@@ -365,20 +453,28 @@ const updateOrderStatus = async (req, res) => {
 const getOrderDetails = async (req, res) => {
   try {
     const { orderId } = req.params;
+    const userId = req.userId; // ✅ Injected from JWT
 
     const order = await OrderModel.findById(orderId)
       .populate('userId', 'name phone')
       .populate('boutiqueId', 'name location');
+
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    // ✅ Ensure the requesting user owns the order
+    if (order.userId._id.toString() !== userId) {
+      return res.status(403).json({ message: 'Unauthorized access to this order.' });
+    }
+
     res.status(200).json({ order });
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching order details:", error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 // Controller function for users to rate a boutique after an order
 const rateOrder = async (req, res) => {
@@ -872,15 +968,27 @@ cloudinary.config({
 
 const viewBill = async (req, res) => {
   try {
-    const { orderId } = req.params; // Get the order ID from request parameters
+    const { orderId } = req.params;
+    const userId = req.userId; // ⬅️ Securely injected from JWT by auth middleware
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Invalid order ID" });
+    }
 
     // Find the order and populate boutique details
     const order = await OrderModel.findById(orderId)
       .populate("boutiqueId", "name")
-      .select("bill _id boutiqueId status");
+      .populate("userId", "_id")
+      .select("bill _id boutiqueId userId status");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Ensure the user owns the order
+    if (order.userId._id.toString() !== userId) {
+      return res.status(403).json({ message: "Unauthorized access to this bill" });
     }
 
     if (!order.bill || !order.bill.totalAmount) {
@@ -895,8 +1003,9 @@ const viewBill = async (req, res) => {
       platformFee: order.bill.platformFee,
       deliveryFee: order.bill.deliveryFee,
       additionalCost: order.bill.additionalCost,
+      gst: order.bill.gst,
       totalAmount: order.bill.totalAmount,
-      status: order.status,
+      status: order.bill.status, // 🔄 Fetch bill status, not order status
     };
 
     res.status(200).json({
@@ -909,6 +1018,7 @@ const viewBill = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 const getBoutiqueOrders = async (req, res) => {
@@ -998,4 +1108,4 @@ export { rateOrder };
 
 export {getOrderDetails};
 export {placeOrder};
-export {updateOrderStatus, viewOrders, viewBill, cancelOrder};
+export {updateOrderStatus, viewPaidOrders, viewBill, cancelOrder};
