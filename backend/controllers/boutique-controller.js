@@ -631,21 +631,44 @@ const boutiqueSearch = async function (req, res) {
 };
 
 
+
 const viewBoutiqueDetails = async (req, res) => {
   try {
-    const { name } = req.params;
+    const { boutiqueId } = req.params;
 
-    // Fetch boutique details
-    const boutique = await BoutiqueModel.findOne({name : name});
-    if (!boutique) {
-      return res.status(404).json({ message: "Boutique not found" });
+    // ✅ Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ message: "Invalid boutique ID." });
     }
 
-    if (req.user) {
-      console.log(`User ID: ${req.user._id} is viewing boutique: ${name}`);
-      // Log the user action or provide additional personalized data
+    const cacheKey = `boutique:${boutiqueId}`;
+
+    // 🚀 Check Redis cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log(`[REDIS] Cache hit for boutiqueId: ${boutiqueId}`);
+      if (req.userId) {
+        console.log(`User ID: ${req.userId} is viewing boutique: ${boutiqueId}`);
+      } else {
+        console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
+      }
+
+      return res.status(200).json({ boutique: cached });
+    }
+
+    // 🧠 Fetch from MongoDB if not in cache
+    const boutique = await BoutiqueModel.findById(boutiqueId).lean();
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    // 🗂️ Cache boutique data in Redis (1 hour TTL)
+    await redis.set(cacheKey, boutique, { ex: 3600 });
+
+    if (req.userId) {
+      console.log(`User ID: ${req.userId} is viewing boutique: ${boutiqueId}`);
     } else {
-      console.log(`Unauthenticated user is viewing boutique: ${name}`);
+      console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
     }
 
     res.status(200).json({ boutique });
@@ -718,6 +741,56 @@ const getBoutiqueCatalogue = async (req, res) => {
         itemName: item.itemName,
         price: item.price
       })),
+    });
+  } catch (error) {
+    console.error("Error retrieving boutique catalogue:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const getBoutiqueCatalogueFU = async (req, res) => {
+  try {
+    const { boutiqueId } = req.params;
+    const userId = req.userId; // ✅ Injected by authMiddleware
+
+    if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ message: "Invalid boutique ID." });
+    }
+
+    const cacheKey = `catalogue:${boutiqueId}`;
+
+    // ⚡ Check Redis cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log(`[REDIS] Catalogue cache hit for boutique: ${boutiqueId}`);
+      return res.status(200).json({
+        message: "Catalogue retrieved successfully (cached)",
+        userId,
+        ...cached
+      });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId).select("name catalogue");
+
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique not found." });
+    }
+
+    const responseData = {
+      boutiqueName: boutique.name,
+      catalogue: boutique.catalogue.map(item => ({
+        itemName: item.itemName,
+        price: item.price,
+      })),
+    };
+
+    // 🧠 Cache for 30 min
+    await redis.set(cacheKey, responseData, { ex: 1800 });
+
+    res.status(200).json({
+      message: "Catalogue retrieved successfully",
+      userId,
+      ...responseData,
     });
   } catch (error) {
     console.error("Error retrieving boutique catalogue:", error);

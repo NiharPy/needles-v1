@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogue, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, Userlogin, getAllBoutiqueAreas } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewOrders, viewBill, cancelOrder } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -26,13 +26,13 @@ router.route("/:userId/logout").post(authMiddleware,UserLogout);
 
 router.route("/search").get(authMiddleware,boutiqueSearch);//searchpage
 
-router.route("/:userId/boutique/:name").get(authMiddleware, viewBoutiqueDetails);
+router.route("/boutique/:boutiqueId").get(authMiddleware, viewBoutiqueDetails);
 
-router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypesWithDetails);
+//router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypesWithDetails);
 
-router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
+//router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
 
-router.route("/:userId/boutique/:boutiqueId/catalogue").get(authMiddleware,getBoutiqueCatalogue);
+router.route("/:boutiqueId/catalogue").get(authMiddleware,getBoutiqueCatalogueFU);
 
 router.route('/:userId/order/place').post(authMiddleware, upload.fields([
   { name: 'referralImage', maxCount: 1 },
