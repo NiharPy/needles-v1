@@ -687,49 +687,54 @@ const viewBoutiqueDetails = async (req, res) => {
   try {
     const { boutiqueId } = req.params;
 
-    // ✅ Validate ObjectId
+    // ✅ Step 1: Validate the boutique ID
     if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
       return res.status(400).json({ message: "Invalid boutique ID." });
     }
 
     const cacheKey = `boutique:${boutiqueId}`;
 
-    // 🚀 Check Redis cache
+    // ✅ Step 2: Check Redis cache
     const cached = await redis.get(cacheKey);
     if (cached) {
-      console.log(`[REDIS] Cache hit for boutiqueId: ${boutiqueId}`);
-      if (req.userId) {
-        console.log(`User ID: ${req.userId} is viewing boutique: ${boutiqueId}`);
-      } else {
-        console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
+      try {
+        const boutiqueFromCache = JSON.parse(cached); // ✅ Parse stringified JSON
+        console.log(`[REDIS] Cache hit for boutiqueId: ${boutiqueId}`);
+        if (req.userId) {
+          console.log(`User ID ${req.userId} viewed boutique ${boutiqueId}`);
+        } else {
+          console.log(`Guest viewed boutique ${boutiqueId}`);
+        }
+        return res.status(200).json({ boutique: boutiqueFromCache });
+      } catch (err) {
+        console.warn(`[REDIS] Invalid JSON in cache for boutiqueId ${boutiqueId}. Deleting cache.`);
+        await redis.del(cacheKey); // ✅ Delete corrupted cache
       }
-
-      // ✅ Parse the cached string
-      const parsed = JSON.parse(cached);
-      return res.status(200).json({ boutique: parsed });
     }
 
-    // 🧠 Fetch from MongoDB if not in cache
+    // ✅ Step 3: Fetch from MongoDB
     const boutique = await BoutiqueModel.findById(boutiqueId).lean();
     if (!boutique) {
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // 🗂️ Cache boutique data in Redis (3 minutes TTL) as JSON string
+    // ✅ Step 4: Store stringified JSON in Redis with 3-minute TTL
     await redis.set(cacheKey, JSON.stringify(boutique), { ex: 180 });
 
+    // ✅ Step 5: Respond with data
     if (req.userId) {
-      console.log(`User ID: ${req.userId} is viewing boutique: ${boutiqueId}`);
+      console.log(`User ID ${req.userId} viewed boutique ${boutiqueId}`);
     } else {
-      console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
+      console.log(`Guest viewed boutique ${boutiqueId}`);
     }
 
-    res.status(200).json({ boutique });
+    return res.status(200).json({ boutique });
   } catch (error) {
-    console.error("Error in viewing boutique details:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error in viewing boutique details:", error.message);
+    return res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 const addItemToCatalogue = async (req, res) => {
