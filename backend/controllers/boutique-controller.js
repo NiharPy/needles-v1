@@ -533,7 +533,7 @@ const boutiqueSearch = async function (req, res) {
 
     const { query } = req.query;
     if (!query) {
-      return res.status(400).json({ message: 'Query is required for semantic search' });
+      return res.status(400).json({ message: 'Query is required for boutique search.' });
     }
 
     // 🧠 Query Parser Function
@@ -556,30 +556,39 @@ const boutiqueSearch = async function (req, res) {
       return { cleanedQuery, ratingValue, areaValue };
     };
 
-    // 🧼 Parse the query
     const { cleanedQuery, ratingValue, areaValue } = parseQuery(query);
-    console.log("Semantic Search →", { cleanedQuery, ratingValue, areaValue });
+    console.log("Search Input →", { cleanedQuery, ratingValue, areaValue });
 
-    // 🧠 Generate embedding from cleaned query
+    // 🧠 Get embedding for semantic search
     const queryVector = await getEmbedding(cleanedQuery);
     if (!queryVector || !Array.isArray(queryVector) || queryVector.length < 100) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to generate valid query vector for semantic search.',
-      });
+      return res.status(500).json({ message: 'Failed to generate query vector.' });
     }
 
     // 📝 Log search interaction
     await logUserActivity(userId, "search", cleanedQuery, queryVector);
 
-    // 🔍 MongoDB $search pipeline
+    // 🔍 Hybrid $search stage
     const pipeline = [
       {
         $search: {
-          knnBeta: {
-            path: 'embedding',
-            vector: queryVector,
-            k: 20,
+          compound: {
+            should: [
+              {
+                knnBeta: {
+                  path: "embedding",
+                  vector: queryVector,
+                  k: 20,
+                },
+              },
+              {
+                text: {
+                  query: cleanedQuery,
+                  path: ["name", "dressTypes.type", "catalogue.itemName"],
+                  fuzzy: { maxEdits: 1 },
+                },
+              },
+            ],
           },
         },
       },
@@ -596,36 +605,33 @@ const boutiqueSearch = async function (req, res) {
           score: { $meta: 'searchScore' }
         },
       },
-      { $sort: { averageRating: -1, score: -1 } },
-      { $limit: 10 }
+      { $sort: { score: -1, averageRating: -1 } },
+      { $limit: 10 },
     ];
 
     const boutiques = await BoutiqueModel.aggregate(pipeline).exec();
 
-    // ⛑️ Fallback if empty
+    // ⛑️ Fallback if needed
     if (!boutiques.length) {
-      console.warn("⚠️ Semantic search returned no results. Falling back...");
       const fallback = await BoutiqueModel.find()
         .limit(3)
         .select("name area averageRating catalogue dressTypes");
 
       return res.status(200).json({
-        message: "No semantic matches found. Showing fallback results.",
+        message: "No exact matches found. Showing fallback results.",
         results: fallback,
       });
     }
 
-    // ✅ Send results
     return res.status(200).json({
-      message: "Semantic search results",
+      message: "Hybrid search results",
       results: boutiques,
     });
 
   } catch (error) {
-    console.error('Semantic Search Error:', error);
+    console.error('Boutique Hybrid Search Error:', error);
     return res.status(500).json({
-      success: false,
-      message: 'Server error. Unable to perform semantic search.',
+      message: 'Server error. Could not complete boutique search.',
     });
   }
 };
