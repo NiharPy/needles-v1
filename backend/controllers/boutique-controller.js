@@ -11,9 +11,10 @@ import openai from "../utils/openai.js"; // axios client with API key
 import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to compute similarity
 import { predefinedHyderabadAreas } from '../constants/areas.js';
 import { logUserActivity, getRecentUserEmbeddings} from "../controllers/recommendationController.js"
-import haversine from "haversine-distance";
 import axios from "axios";
 import dotenv from 'dotenv';
+import redis from '../config/redis.js';
+
 dotenv.config();
 
 cloudinary.config({
@@ -870,6 +871,15 @@ export const getRecommendedDressTypes = async (req, res) => {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ message: "Unauthorized access." });
 
+    const redisKey = `recommended:${userId}`;
+    const cachedData = await redis.get(redisKey);
+    if (cachedData) {
+      return res.status(200).json({
+        message: "Returned from Redis cache",
+        dressTypes: JSON.parse(cachedData),
+      });
+    }
+
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
       return res.status(400).json({ message: "User location missing." });
@@ -1017,6 +1027,8 @@ export const getRecommendedDressTypes = async (req, res) => {
         reason: "Sorted by relevance + location + rating",
       });
     }
+
+    await redis.set(redisKey, JSON.stringify(sorted), 'EX', 3600); // Cache for 1 hour
 
     return res.status(200).json({
       message: "Recommended dress types using distance, rating and user activity",
