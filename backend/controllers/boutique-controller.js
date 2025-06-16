@@ -106,7 +106,7 @@ export const updateBoutiqueEmbedding = async (boutiqueId) => {
     Rating: ${boutique.rating || 'No rating yet'}
   `;
 
-  const embedding = await getEmbeddingForText(combinedText);
+  const embedding = await getEmbedding(combinedText);
   await BoutiqueModel.findByIdAndUpdate(boutiqueId, { embedding });
 };
 
