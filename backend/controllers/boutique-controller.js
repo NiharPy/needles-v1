@@ -704,7 +704,9 @@ const viewBoutiqueDetails = async (req, res) => {
         console.log(`Unauthenticated user is viewing boutique: ${boutiqueId}`);
       }
 
-      return res.status(200).json({ boutique: JSON.parse(cached) });
+      // ✅ Parse the cached string
+      const parsed = JSON.parse(cached);
+      return res.status(200).json({ boutique: parsed });
     }
 
     // 🧠 Fetch from MongoDB if not in cache
@@ -713,7 +715,7 @@ const viewBoutiqueDetails = async (req, res) => {
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // 🗂️ Cache boutique data in Redis (3 minutes TTL)
+    // 🗂️ Cache boutique data in Redis (3 minutes TTL) as JSON string
     await redis.set(cacheKey, JSON.stringify(boutique), { ex: 180 });
 
     if (req.userId) {
@@ -728,6 +730,7 @@ const viewBoutiqueDetails = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 const addItemToCatalogue = async (req, res) => {
   try {
