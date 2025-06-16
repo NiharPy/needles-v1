@@ -773,6 +773,25 @@ const getRecommendedBoutiques = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
+    const redisKey = `recommended-boutiques:${userId}`;
+
+    // 🧠 CACHE: Check Redis first
+    const cached = await redis.get(redisKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      const lastUpdated = parsed._cachedAt || 0;
+      const now = Date.now();
+      const ageInSeconds = (now - lastUpdated) / 1000;
+
+      // ⏱ Cache valid for 1 hour
+      if (ageInSeconds < 3600) {
+        return res.status(200).json({
+          message: "Recommended boutiques fetched from cache.",
+          recommendedBoutiques: parsed.boutiques,
+        });
+      }
+    }
+
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
       return res.status(400).json({ message: "User location is missing." });
@@ -792,12 +811,11 @@ const getRecommendedBoutiques = async (req, res) => {
       return res.status(404).json({ message: "No boutiques with valid coordinates." });
     }
 
-    // 👇 Prepare destinations for Distance Matrix
+    // 👇 Google Distance Matrix API
     const destinations = boutiquesWithCoords
       .map(b => `${b.location.latitude},${b.location.longitude}`)
       .join("|");
 
-    // 📦 Get actual distance from Google Maps
     const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
       params: {
         origins: userLoc,
@@ -812,7 +830,7 @@ const getRecommendedBoutiques = async (req, res) => {
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
-    // 🧠 Score based on rating + actual road distance
+    // 🎯 Score boutiques
     const scored = boutiquesWithCoords.map((boutique, i) => {
       const distanceKm = distances[i]?.distance?.value / 1000 || 100;
       const ratingScore = boutique.averageRating || 0;
@@ -827,15 +845,25 @@ const getRecommendedBoutiques = async (req, res) => {
       };
     });
 
-    // 📊 Sort by combined score (highest rating + closest)
     const sorted = scored
       .sort((a, b) => b.combinedScore - a.combinedScore)
       .slice(0, 10);
 
-    // 📝 Log viewed top 5 recommended with embedding
+    // 🔁 Log viewed top 5 boutiques
     for (const boutique of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", `Boutique:${boutique.name}`, boutique.embedding);
     }
+
+    // ✅ Update Redis Cache
+    await redis.set(
+      redisKey,
+      JSON.stringify({
+        _cachedAt: Date.now(),
+        boutiques: sorted,
+      }),
+      "EX",
+      3600
+    );
 
     return res.status(200).json({
       message: "Recommended boutiques fetched successfully.",
@@ -850,6 +878,7 @@ const getRecommendedBoutiques = async (req, res) => {
 
 
 const canonicalLabels = ["Lehenga", "Saree Blouse", "Kurta", "Gown", "Sherwani", "Choli"];
+
 const canonicalImageMap = [
   { label: "Lehenga", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/l9z0s4ew2m9zsucdgq8e.png" },
   { label: "Saree Blouse", imageUrl: "https://res.cloudinary.com/dwymmpkh8/image/upload/v1750053856/Hardcoded/ptlfdfyo8b75ktk6lbtl.png" },
@@ -863,7 +892,6 @@ const canonicalImageMap = [
 const normalize = str => str.trim().toLowerCase();
 const imageMap = Object.fromEntries(canonicalImageMap.map(({ label, imageUrl }) => [normalize(label), imageUrl]));
 
-// Google API Key
 const GOOGLE_DISTANCE_MATRIX_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 export const getRecommendedDressTypes = async (req, res) => {
@@ -872,11 +900,11 @@ export const getRecommendedDressTypes = async (req, res) => {
     if (!userId) return res.status(401).json({ message: "Unauthorized access." });
 
     const redisKey = `recommended:${userId}`;
-    const cachedData = await redis.get(redisKey);
-    if (cachedData) {
+    const cached = await redis.get(redisKey);
+    if (cached) {
       return res.status(200).json({
         message: "Returned from Redis cache",
-        dressTypes: JSON.parse(cachedData),
+        dressTypes: JSON.parse(cached),
       });
     }
 
@@ -887,7 +915,6 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const userCoords = `${user.address.location.lat},${user.address.location.lng}`;
 
-    // Get boutiques with valid coords
     const boutiques = await BoutiqueModel.find().lean();
     const boutiqueWithCoords = boutiques.filter(b => b.location?.latitude && b.location?.longitude);
 
@@ -910,7 +937,6 @@ export const getRecommendedDressTypes = async (req, res) => {
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
-    // Boutique score calculation
     const boutiqueScores = boutiqueWithCoords.map((boutique, i) => {
       const rating = boutique.averageRating || 0;
       const distanceKm = (distances[i]?.distance?.value || 1e6) / 1000;
@@ -920,7 +946,6 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const topBoutiques = boutiqueScores.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // STEP 1: Gather raw dress types
     const rawTypes = [];
     topBoutiques.forEach(b => {
       (b.dressTypes || []).forEach(dt => {
@@ -933,7 +958,7 @@ export const getRecommendedDressTypes = async (req, res) => {
       return res.status(200).json({ message: "No dress types available near you." });
     }
 
-    // STEP 2: Embed canonical and raw labels
+    // Step 2: Embeddings
     const [canonicalRes, rawRes] = await Promise.all([
       axios.post("https://api.openai.com/v1/embeddings", {
         input: canonicalLabels,
@@ -958,7 +983,6 @@ export const getRecommendedDressTypes = async (req, res) => {
     const canonicalEmbeddings = canonicalRes.data.data.map(d => d.embedding);
     const rawEmbeddings = rawRes.data.data.map(d => d.embedding);
 
-    // STEP 3: Match raw types to canonical
     const canonicalCountMap = {};
     const canonicalRawTypes = new Set();
 
@@ -982,17 +1006,20 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const uniqueLabels = [...canonicalRawTypes];
 
-    // STEP 4: User embedding personalization
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
     if (!userEmbeddings.length) {
+      const defaultList = uniqueLabels.map(label => ({
+        label,
+        imageUrl: imageMap[normalize(label)] || null,
+        count: canonicalCountMap[label] || 1,
+      }));
+
+      await redis.set(redisKey, JSON.stringify(defaultList), "EX", 3600);
+
       return res.status(200).json({
         message: "No user activity yet. Showing trending dress types.",
-        dressTypes: uniqueLabels.map(label => ({
-          label,
-          imageUrl: imageMap[normalize(label)] || null,
-          count: canonicalCountMap[label] || 1,
-        })),
+        dressTypes: defaultList,
       });
     }
 
@@ -1009,7 +1036,11 @@ export const getRecommendedDressTypes = async (req, res) => {
     const labelEmbeddings = labelRes.data.data.map(d => d.embedding);
 
     const relevanceScores = uniqueLabels.map((label, idx) => {
-      const avgSim = userEmbeddings.reduce((sum, emb) => sum + cosineSimilarity(labelEmbeddings[idx], emb), 0) / userEmbeddings.length;
+      const avgSim = userEmbeddings.reduce(
+        (sum, emb) => sum + cosineSimilarity(labelEmbeddings[idx], emb),
+        0
+      ) / userEmbeddings.length;
+
       return {
         label,
         imageUrl: imageMap[normalize(label)] || null,
@@ -1020,7 +1051,6 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const sorted = relevanceScores.sort((a, b) => b.relevance - a.relevance);
 
-    // STEP 5: Log user activity
     for (const { label } of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", label, {
         source: "getRecommendedDressTypes",
@@ -1028,7 +1058,7 @@ export const getRecommendedDressTypes = async (req, res) => {
       });
     }
 
-    await redis.set(redisKey, JSON.stringify(sorted), 'EX', 3600); // Cache for 1 hour
+    await redis.set(redisKey, JSON.stringify(sorted), "EX", 3600);
 
     return res.status(200).json({
       message: "Recommended dress types using distance, rating and user activity",
@@ -1045,16 +1075,36 @@ export const getRecommendedDressTypes = async (req, res) => {
 };
 
 
+
+
 export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
   try {
     const userId = req.userId;
     const selectedType = req.params.dressType?.trim();
+    const CACHE_DURATION = 3600; // 1 hour in seconds
 
     if (!userId || !selectedType) {
       return res.status(400).json({ message: "Missing user ID or dress type." });
     }
 
-    // Get user location
+    const cacheKey = `top-rated:${userId}:${selectedType.toLowerCase()}`;
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      const lastUpdated = parsed._cachedAt || 0;
+      const now = Date.now();
+      const ageInSeconds = (now - lastUpdated) / 1000;
+
+      if (ageInSeconds < CACHE_DURATION) {
+        return res.status(200).json({
+          message: `Top rated boutiques offering ${selectedType} (from cache)`,
+          ...parsed,
+        });
+      }
+    }
+
+    // --- User Location ---
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
       return res.status(400).json({ message: "User location is missing." });
@@ -1062,17 +1112,17 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 
     const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
 
-    // Get all boutiques with valid coordinates
+    // --- Boutique Data ---
     const allBoutiques = await BoutiqueModel.find().lean();
     const boutiquesWithCoords = allBoutiques.filter(
       b => b.location?.latitude && b.location?.longitude
     );
 
-    if (boutiquesWithCoords.length === 0) {
+    if (!boutiquesWithCoords.length) {
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
-    // Semantic embedding
+    // --- Embedding Matching ---
     const [selectedEmbeddingRes, canonicalEmbeddingRes] = await Promise.all([
       openai.post("/v1/embeddings", {
         input: selectedType,
@@ -1086,7 +1136,6 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 
     const selectedVector = selectedEmbeddingRes.data.data[0].embedding;
 
-    // Find closest canonical label
     let bestMatch = null, bestSim = -1;
     canonicalLabels.forEach((canonical, i) => {
       const sim = cosineSimilarity(selectedVector, canonicalEmbeddingRes.data.data[i].embedding);
@@ -1096,21 +1145,20 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
       }
     });
 
-    // Filter only relevant boutiques offering this dress type
+    // --- Filter boutiques ---
     const relevantBoutiques = boutiquesWithCoords.filter(b =>
       b.dressTypes.some(dt => dt.type?.trim().toLowerCase() === bestMatch.toLowerCase())
     );
 
-    if (relevantBoutiques.length === 0) {
+    if (!relevantBoutiques.length) {
       return res.status(404).json({ message: `No boutiques found offering ${bestMatch}.` });
     }
 
-    // Prepare destinations for Distance Matrix API
+    // --- Distance Matrix API ---
     const destinations = relevantBoutiques
       .map(b => `${b.location.latitude},${b.location.longitude}`)
       .join("|");
 
-    // Call Google Distance Matrix API
     const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
       params: {
         origins: userLoc,
@@ -1125,12 +1173,11 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
-    // Score based on rating and actual Google distance
+    // --- Scoring ---
     const scored = relevantBoutiques.map((b, i) => {
-      const distanceKm = distances[i]?.distance?.value / 1000 || 100; // fallback 100 km if missing
+      const distanceKm = distances[i]?.distance?.value / 1000 || 100;
       const ratingScore = b.averageRating || 0;
       const distanceScore = distanceKm > 30 ? 0 : 1 - distanceKm / 30;
-
       const combinedScore = ratingScore * 0.6 + distanceScore * 0.4;
 
       return {
@@ -1140,23 +1187,24 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
       };
     });
 
-    // Get top 5
     const top = scored
       .sort((a, b) => b.combinedScore - a.combinedScore)
       .slice(0, 5);
 
-    // Log viewed boutiques
-    for (const boutique of top) {
-      await logUserActivity(userId, "view", `Boutique:${boutique.name}`, {
-        source: "getTopRatedNearbyBoutiquesForDressType",
-        reason: `User searched for ${bestMatch}`,
-      });
-    }
+    // --- Log User Activity (one entry for the search) ---
+    await logUserActivity(userId, "view", bestMatch, selectedVector);
+
+    const response = {
+      dressType: bestMatch,
+      boutiques: top,
+      _cachedAt: Date.now(), // Timestamp for cache freshness
+    };
+
+    await redis.set(cacheKey, JSON.stringify(response), "EX", CACHE_DURATION);
 
     return res.status(200).json({
       message: `Top rated boutiques offering ${bestMatch}`,
-      dressType: bestMatch,
-      boutiques: top,
+      ...response,
     });
 
   } catch (err) {
@@ -1164,6 +1212,7 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+
 
 
 const addDressType = async (req, res) => {
