@@ -565,7 +565,7 @@ const boutiqueSearch = async function (req, res) {
     if (ratingValue) filter.averageRating = { $gte: ratingValue };
     if (areaValue) filter.area = { $regex: areaValue, $options: 'i' };
 
-    // 🔎 Use keyword search if query is short
+    // 🔎 Use keyword search directly for 1-word queries
     if (wordCount < 2) {
       const keywordFallback = await BoutiqueModel.find({
         $or: [
@@ -585,7 +585,7 @@ const boutiqueSearch = async function (req, res) {
       });
     }
 
-    // ✂️ Use up to 2 keywords for regex
+    // ✂️ Use up to 2 keywords for keyword search
     const keywords = cleanedQuery.split(/\s+/).slice(0, 2);
     const keywordRegex = keywords.map((k) => new RegExp(k, 'i'));
 
@@ -601,6 +601,7 @@ const boutiqueSearch = async function (req, res) {
       .limit(5)
       .select("name area averageRating catalogue dressTypes");
 
+    // ⛔ If sufficient keyword results, return early
     if (keywordResults.length >= 5) {
       return res.status(200).json({
         message: "Keyword-based results",
@@ -616,53 +617,7 @@ const boutiqueSearch = async function (req, res) {
 
     await logUserActivity(userId, "search", cleanedQuery, queryVector);
 
-    const semanticPipeline = [
-      {
-        $search: {
-          knnBeta: {
-            path: 'embedding',
-            vector: queryVector,
-            k: 20,
-            ...(Object.keys(filter).length > 0 && { filter }),
-          }
-        }
-      },
-      {
-        $project: {
-          name: 1,
-          area: 1,
-          averageRating: 1,
-          totalRatings: 1,
-          catalogue: 1,
-          dressTypes: 1,
-          score: { $meta: 'searchScore' },
-        },
-      },
-      { $sort: { averageRating: -1, score: -1 } },
-      { $limit: 10 },
-    ];
-
-    const semanticResults = await BoutiqueModel.aggregate(semanticPipeline).exec();
-
-    if (!semanticResults.length) {
-      return res.status(200).json({
-        message: "No semantic results found. Returning keyword-based fallback.",
-        results: keywordResults,
-      });
-    }
-
-    return res.status(200).json({
-      message: "Hybrid semantic search results",
-      results: semanticResults,
-    });
-
-  } catch (error) {
-    console.error('Boutique Hybrid Search Error:', error);
-    return res.status(500).json({
-      message: 'Server error. Could not complete boutique search.',
-    });
-  }
-};
+    // 🧠 Construct knnBeta
 
 
 
