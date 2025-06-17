@@ -7,6 +7,8 @@ import UsersRouter from "./APIroutes/UsersRouter.js";
 import BoutiquesRouter from "./APIroutes/BoutiquesRouter.js";
 import { config } from './config/config.js';
 import http from 'http';
+import './utils/orderCleanupJob.js'; // 🧠 This will start the cron job
+
 
 dotenv.config();
 
