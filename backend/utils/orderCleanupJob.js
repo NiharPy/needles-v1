@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import OrderModel from '../models/OrderModel.js';
+import OrderModel from '../models/OrderSchema.js';
 
 // ⏱ Run every 1 minute
 cron.schedule('* * * * *', async () => {
