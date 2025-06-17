@@ -80,7 +80,8 @@ const orderSchema = new mongoose.Schema({
     status: {
       type: String,
       enum: ["Pending", "Rejected", "Paid"],
-      default: "Pending"
+      default: "Pending",
+      generatedAt: { type: Date, default: Date.now },
     },
   },
   createdAt: { type: Date, default: Date.now },

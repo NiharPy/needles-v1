@@ -340,14 +340,14 @@ const updateOrderStatus = async (req, res) => {
 
 export const viewPendingOrders = async (req, res) => {
   try {
-    const userId = req.userId; // Injected by authMiddleware
+    const userId = req.userId;
 
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
 
     const pendingOrders = await OrderModel.find({
       userId,
       "bill.status": "Pending",
-      "bill.generatedAt": { $gte: oneHourAgo }  // 👈 Only show recent pending orders
+      "bill.generatedAt": { $gte: oneHourAgo }
     })
       .populate("boutiqueId", "name")
       .select("referralImage _id boutiqueId bill.totalAmount bill.status");
@@ -374,6 +374,7 @@ export const viewPendingOrders = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 export const rejectOrderBill = async (req, res) => {
@@ -849,6 +850,7 @@ const createBill = async (req, res) => {
       gst,
       totalAmount,
       status: "Pending",
+      generatedAt: new Date(),
     };
 
     order.markModified("bill");

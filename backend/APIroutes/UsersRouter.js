@@ -75,7 +75,7 @@ router.route('/:userId/alterations/submit').post(upload.fields([
 
 router.route("/:userId/refresh-token").post(refreshAccessToken);
 
-router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
+//router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
 //odd
 router.route('/:userId/ODDorder').get(authMiddleware,viewODDOrders);
