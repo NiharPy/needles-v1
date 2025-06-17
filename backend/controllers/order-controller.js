@@ -170,6 +170,40 @@ const placeOrder = async (req, res) => {
   }
 };
 
+export const scheduleOrderCancellation = (orderId) => {
+  // 🔁 5-minute timer to check bill generation
+  setTimeout(async () => {
+    const order = await OrderModel.findById(orderId);
+
+    if (!order || order.status === "Cancelled") return;
+
+    // ❌ If bill not generated, cancel the order
+    if (!order.bill.generatedAt) {
+      order.status = "Cancelled";
+      order.bill.status = "Rejected";
+      await order.save();
+      console.log(`[CANCEL] Order ${orderId} cancelled: bill not generated in 5 mins`);
+      return;
+    }
+
+    // ✅ If bill is generated, start 45-min timer for payment
+    setTimeout(async () => {
+      const recheck = await OrderModel.findById(orderId);
+
+      if (!recheck || recheck.status === "Cancelled") return;
+
+      // ❌ If still not paid
+      if (recheck.bill.status !== "Paid") {
+        recheck.status = "Cancelled";
+        recheck.bill.status = "Rejected";
+        await recheck.save();
+        console.log(`[CANCEL] Order ${orderId} cancelled: bill unpaid in 45 mins`);
+      }
+    }, 45 * 60 * 1000); // 45 minutes
+
+  }, 5 * 60 * 1000); // 5 minutes
+};
+
 
 
 const cancelOrder = async (req, res) => {
