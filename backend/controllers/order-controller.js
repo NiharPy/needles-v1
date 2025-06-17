@@ -286,6 +286,34 @@ const viewPaidOrders = async (req, res) => {
   }
 };
 
+export const getUserPendingOrders = async (req, res) => {
+  try {
+    const userId = req.userId; // ✅ From JWT auth middleware
+
+    const orders = await OrderModel.find({
+      userId,
+      status: "Pending",
+    }).select("dressType measurements pickUp referralImage voiceNote status");
+
+    const filteredOrders = orders.map((order) => {
+      return {
+        orderId: order._id,
+        dressType: order.dressType,
+        ...(order.measurements ? { measurements: Object.fromEntries(order.measurements) } : {}),
+        ...(order.pickUp ? { pickUp: true } : {}),
+        referralImage: order.referralImage || null,
+        voiceNote: order.voiceNote?.length ? order.voiceNote : null,
+        status: order.status,
+      };
+    });
+
+    res.status(200).json({ orders: filteredOrders });
+  } catch (error) {
+    console.error("Error fetching user orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message || error });
+  }
+};
+
 
 const updateOrderStatus = async (req, res) => {
   try {
