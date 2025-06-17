@@ -44,7 +44,6 @@ const sendEmailToAdmin = async (subject, text) => {
 const placeOrder = async (req, res) => {
   try {
     const {
-      userId,
       boutiqueId,
       pickUp: rawPickUp,
       dressType,
@@ -53,10 +52,10 @@ const placeOrder = async (req, res) => {
       catalogueItems,
     } = req.body;
 
-    // 🔁 Ensure pickUp is boolean
+    const userId = req.userId; // ✅ Extract userId from JWT
+
     const pickUp = rawPickUp === true || rawPickUp === 'true';
 
-    // 🧪 Parse measurements string to object if needed
     let measurements;
     if (typeof rawMeasurements === "string") {
       const sanitizedMeasurements = rawMeasurements.trim();
@@ -71,14 +70,12 @@ const placeOrder = async (req, res) => {
       measurements = rawMeasurements;
     }
 
-    // ✅ Validate referral image upload
     if (!req.files || !req.files.referralImage || !req.files.referralImage[0]) {
       return res.status(400).json({ message: "Referral image is required" });
     }
 
     const referralImage = req.files.referralImage[0].path;
 
-    // 🎤 Handle voice notes
     let voiceNoteUrl = [];
     if (Array.isArray(req.files.voiceNotes)) {
       voiceNoteUrl = req.files.voiceNotes.slice(0, 5).map(file => file.path);
@@ -101,7 +98,6 @@ const placeOrder = async (req, res) => {
       return res.status(400).json({ message: `Invalid dress type: ${dressType} for this boutique` });
     }
 
-    // 🧾 Validate catalogue items if provided
     if (catalogueItems && Array.isArray(catalogueItems)) {
       catalogueItems.forEach(item => {
         const itemName = Array.isArray(item.itemName) ? item.itemName : [String(item.itemName)];
@@ -113,7 +109,6 @@ const placeOrder = async (req, res) => {
       });
     }
 
-    // 📏 Validate measurements if pickUp is false
     if (!pickUp && !measurements) {
       return res.status(400).json({
         message: `Measurements are required for dress type ${dressType} when pickUp is false`,
@@ -134,7 +129,6 @@ const placeOrder = async (req, res) => {
       }
     }
 
-    // 🛒 Create order
     const order = await OrderModel.create({
       userId: user._id,
       boutiqueId: boutique._id,
@@ -160,9 +154,8 @@ const placeOrder = async (req, res) => {
     await boutique.save();
 
     user.orders.push({ orderId: order._id, status: "Pending" });
-    await user.save();
+    await user.save({ validateBeforeSave: false }); // ✅ prevent OTP validation error
 
-    // ⏳ Schedule cancellation
     if (typeof scheduleOrderCancellation === "function") {
       scheduleOrderCancellation(order._id, user.phone);
     }
@@ -176,6 +169,7 @@ const placeOrder = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
+
 
 
 const cancelOrder = async (req, res) => {
