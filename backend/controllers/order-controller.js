@@ -342,18 +342,16 @@ export const viewPendingOrders = async (req, res) => {
   try {
     const userId = req.userId;
 
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
-
     const pendingOrders = await OrderModel.find({
       userId,
-      "bill.status": "Pending",
-      "bill.generatedAt": { $gte: oneHourAgo }
+      status: "Accepted",         // ✅ Order must be accepted
+      "bill.status": "Pending"    // ✅ Bill must be pending
     })
       .populate("boutiqueId", "name")
       .select("referralImage _id boutiqueId bill.totalAmount bill.status");
 
     if (!pendingOrders.length) {
-      return res.status(404).json({ message: "No recent pending orders found" });
+      return res.status(404).json({ message: "No pending orders found" });
     }
 
     const formattedOrders = pendingOrders.map(order => ({
@@ -374,6 +372,7 @@ export const viewPendingOrders = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 
