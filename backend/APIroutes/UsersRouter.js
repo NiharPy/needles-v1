@@ -1,6 +1,6 @@
 import express from 'express';
 import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
-import { registerUser, verifyOtp, Userlogin, getAllBoutiqueAreas } from '../controllers/user-controller.js';
+import { registerUser, verifyOtp, getAllBoutiqueAreas } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewPaidOrders, viewPendingOrders ,viewBill, cancelOrder, rejectOrderBill, markBillAsPaid, getUserPendingOrders} from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
 import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
