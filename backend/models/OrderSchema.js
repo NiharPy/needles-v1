@@ -71,7 +71,12 @@ const orderSchema = new mongoose.Schema({
     },
     platformFee: { type: Number, default: 0 },
     deliveryFee: { type: Number, default: 0 },
-    gst: { type: Number, default: 0 },
+    gst: {
+      onBoutiqueCommission: { type: Number, default: 0 },
+      onUserFee: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+      rate: { type: Number, default: 18 },
+    },
     additionalCost: {
       amount: { type: Number, default: 0 },
       reason: { type: String, default: "" },
