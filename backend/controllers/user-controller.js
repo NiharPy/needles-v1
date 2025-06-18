@@ -235,7 +235,7 @@ const verifyOtp = async (req, res) => {
   };  
   
 
- export const logout = async (req, res) => {
+  export const logout = async (req, res) => {
     try {
       const authHeader = req.headers.authorization;
   
@@ -245,15 +245,23 @@ const verifyOtp = async (req, res) => {
   
       const token = authHeader.split(" ")[1];
   
-      // 🛑 Blacklist the access token
-      await BlacklistedToken.create({ token });
+      // 🧠 Decode token to get expiry timestamp
+      const decoded = jwt.decode(token);
   
-      // 🔐 Remove refresh token from user model
-      const userId = req.userId; // Injected by authMiddleware
+      // Use decoded expiration or default to 15 mins from now
+      const expiresAt = decoded?.exp
+        ? new Date(decoded.exp * 1000)
+        : new Date(Date.now() + 15 * 60 * 1000);
+  
+      // 🛑 Blacklist the token
+      await BlacklistedToken.create({ token, expiresAt });
+  
+      // 🧹 Remove refresh token from user record
+      const userId = req.userId;
       const user = await UserModel.findById(userId);
   
       if (user) {
-        user.refreshToken = null; // Clear stored refresh token
+        user.refreshToken = null;
         await user.save();
       }
   
