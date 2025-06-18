@@ -791,93 +791,68 @@ export const getAlterationRequestsForBoutique = async (req, res) => {
 const createBill = async (req, res) => {
   try {
     const { orderId, selectedItems, additionalCost } = req.body;
-    const boutiqueId = req.user.userId; // ⬅️ Extracted securely from JWT
+    const boutiqueId = req.user.userId;
 
-    // ✅ Validate MongoDB ObjectIds
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ error: "Invalid order ID" });
+    if (!mongoose.Types.ObjectId.isValid(orderId) || !mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      return res.status(400).json({ error: "Invalid IDs" });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
-      return res.status(400).json({ error: "Invalid boutique ID" });
-    }
-
-    // ✅ Find the boutique and order
     const boutique = await BoutiqueModel.findById(boutiqueId);
     const order = await OrderModel.findById(orderId).populate("userId");
 
-    if (!boutique || !order) {
-      return res.status(404).json({ error: "Boutique or Order not found" });
-    }
+    if (!boutique || !order) return res.status(404).json({ error: "Boutique or Order not found" });
+    if (order.status === "Declined") return res.status(400).json({ message: "Order was declined." });
 
-    // ❌ Do not allow bill creation for declined orders
-    if (order.status === "Declined") {
-      return res.status(400).json({ message: "Cannot generate bill for a declined order." });
-    }
-
-    // ✅ Set status to Accepted
     order.status = "Accepted";
 
-    let itemAmount = 0;
+    let subtotal = 0;
     let billDetails = {};
 
-    // ✅ Calculate item total
     selectedItems.forEach(({ item, quantity }) => {
       const catalogItem = boutique.catalogue.find((c) => c.itemName.includes(item));
       if (catalogItem) {
         const price = catalogItem.price[0] * quantity;
         billDetails[item] = price;
-        itemAmount += price;
+        subtotal += price;
       }
     });
 
-    // ✅ Commission calculations
-    const boutiqueCommission = itemAmount * 0.05; // 5%
-    const userPlatformFee = itemAmount * 0.02;     // 2%
-    const gstOnBoutique = boutiqueCommission * 0.18;
-    const gstOnUser = userPlatformFee * 0.18;
+    // Additional cost
+    let additionalCostValue = 0;
+    let additionalCostReason = "Not specified";
+    if (additionalCost && typeof additionalCost === "object" && additionalCost.amount !== undefined) {
+      const val = parseFloat(additionalCost.amount);
+      if (!isNaN(val) && val >= 0) {
+        additionalCostValue = val;
+        additionalCostReason = additionalCost.reason || "Not specified";
+        subtotal += val;
+      }
+    }
 
-    // ✅ User pays their fee + GST
-    let totalAmount = itemAmount + userPlatformFee + gstOnUser;
+    const platformFee = subtotal * 0.015;
+    const boutiqueCommission = subtotal * 0.05;
+    const gstOnPlatformFee = platformFee * 0.18;
+    const gstOnBoutiqueCommission = boutiqueCommission * 0.18;
 
-    // ✅ Delivery fee
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
     const deliveryFee = calculateDeliveryFee(distance);
-    totalAmount += deliveryFee;
+    const totalAmount = subtotal + platformFee + gstOnPlatformFee + deliveryFee;
 
-    // ✅ Additional cost (if any)
-    let additionalCostValue = 0;
-    let additionalCostReason = "Not specified";
-
-    if (
-      additionalCost &&
-      typeof additionalCost === "object" &&
-      additionalCost.amount !== undefined
-    ) {
-      additionalCostValue = parseFloat(additionalCost.amount);
-      if (!isNaN(additionalCostValue) && additionalCostValue >= 0) {
-        additionalCostReason = additionalCost.reason || "Not specified";
-        totalAmount += additionalCostValue;
-      } else {
-        additionalCostValue = 0;
-      }
-    }
-
-    // ✅ Update order bill
     order.bill = {
       items: billDetails,
-      platformFee: userPlatformFee,
+      subtotal,
+      platformFee,
       deliveryFee,
       additionalCost: {
         amount: additionalCostValue,
         reason: additionalCostReason,
       },
       gst: {
-        onBoutiqueCommission: gstOnBoutique,
-        onUserFee: gstOnUser,
-        total: gstOnBoutique + gstOnUser,
+        onPlatformFee: gstOnPlatformFee,
+        onBoutiqueCommission: gstOnBoutiqueCommission,
+        total: gstOnPlatformFee + gstOnBoutiqueCommission,
         rate: 18,
       },
       boutiqueCommission,
@@ -890,18 +865,39 @@ const createBill = async (req, res) => {
     order.totalAmount = totalAmount;
     await order.save();
 
-    // ✅ Send response
+    // 📨 Send commission + GST email to admin
+    const subject = `🧾 New Bill Created for Boutique: ${boutique.name}`;
+    const text = `
+A new order bill has been generated.
+
+Boutique Name: ${boutique.name}
+Boutique ID: ${boutique._id}
+
+Commission (5%): ₹${boutiqueCommission.toFixed(2)}
+GST on Commission (18%): ₹${gstOnBoutiqueCommission.toFixed(2)}
+
+Total: ₹${totalAmount.toFixed(2)}
+Status: ${order.status}
+
+Generated At: ${order.bill.generatedAt.toISOString()}
+    `;
+
+    await sendEmailToAdmin(subject, text);
+
     res.status(200).json({
-      message: "Bill created successfully",
+      message: "Bill created successfully and email sent to admin.",
       bill: order.bill,
       orderId: order._id,
       status: order.status,
     });
+
   } catch (error) {
     console.error("Error creating bill:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+
 
 
 
@@ -922,7 +918,7 @@ const getDistance = async (userLocation, boutiqueLocation) => {
 
 // Simple delivery fee calculation
 const calculateDeliveryFee = (distance) => {
-  return distance * 10; // ₹10 per KM
+  return distance * 5; // ₹10 per KM
 };
 
 
