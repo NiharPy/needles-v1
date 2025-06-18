@@ -498,65 +498,83 @@ const getOrderDetails = async (req, res) => {
 
 
 // Controller function for users to rate a boutique after an order
-const rateOrder = async (req, res) => {
+export const rateOrder = async (req, res) => {
   try {
     const { boutiqueId, rating, comment } = req.body;
-    const userId = req.user.id; // Assuming user ID is available from the authenticated request
+    const userId = req.user.id;
 
-    // Validate the rating
     if (rating < 1 || rating > 5) {
       return res.status(400).json({ message: "Rating must be between 1 and 5." });
     }
 
-    // Find the boutique by ID
+    // ✅ Check if user has completed an order from this boutique
+    const completedOrder = await OrderModel.findOne({
+      userId,
+      boutiqueId,
+      status: "Completed",
+    });
+
+    if (!completedOrder) {
+      return res.status(403).json({
+        message: "You can only rate a boutique after completing an order with them.",
+      });
+    }
+
+    // ✅ Fetch boutique
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // Check if the boutique's ratings array is valid
+    // ✅ Ensure ratings array exists
     if (!Array.isArray(boutique.ratings)) {
-      return res.status(500).json({ message: "Boutique ratings are not properly initialized." });
+      boutique.ratings = [];
     }
 
-    // Check if the user has already rated this boutique
+    let isNewRating = true;
+
+    // ✅ Check if the user has already rated
     const existingRatingIndex = boutique.ratings.findIndex(
-      (ratingItem) => ratingItem.userId && ratingItem.userId.toString() === userId.toString()
+      (r) => r.userId?.toString() === userId.toString()
     );
 
     if (existingRatingIndex !== -1) {
-      // If the user has already rated, update the existing rating
+      // 🔁 Update existing rating
       boutique.ratings[existingRatingIndex].rating = rating;
       boutique.ratings[existingRatingIndex].comment = comment;
+      isNewRating = false;
     } else {
-      // If it's a new rating, add it to the boutique's ratings array
+      // ➕ Add new rating
       boutique.ratings.push({ userId, rating, comment });
     }
 
-    // Debugging: Log ratings array and calculated average
-    console.log("Ratings array:", boutique.ratings);
-    
-    // Recalculate the average rating
-    const totalRatings = boutique.ratings.length;
-    const sumOfRatings = boutique.ratings.reduce((sum, ratingItem) => sum + ratingItem.rating, 0);
-    const newAverageRating = sumOfRatings / totalRatings;
-    boutique.averageRating = newAverageRating;
+    // ✅ Update totalRatings only if it's a new rating
+    if (isNewRating) {
+      boutique.totalRatings = (boutique.totalRatings || 0) + 1;
+    }
 
-    // Debugging: Log new average rating
-    console.log("New average rating:", newAverageRating);
+    // ✅ Recalculate averageRating
+    const sumRatings = boutique.ratings.reduce((sum, r) => sum + r.rating, 0);
+    boutique.averageRating = sumRatings / boutique.totalRatings;
 
-    // Save the updated boutique
     await boutique.save();
 
-    // Refetch the updated boutique to ensure we have the latest averageRating
-    const updatedBoutique = await BoutiqueModel.findById(boutiqueId);
-
-    res.status(200).json({ message: "Rating submitted successfully.", boutique: updatedBoutique });
+    res.status(200).json({
+      message: "Rating submitted successfully.",
+      boutique: {
+        _id: boutique._id,
+        name: boutique.name,
+        averageRating: boutique.averageRating,
+        totalRatings: boutique.totalRatings,
+        ratings: boutique.ratings,
+      },
+    });
   } catch (error) {
     console.error("Error while rating boutique:", error);
     res.status(500).json({ message: "Internal server error." });
   }
 };
+
 
 
 
@@ -1120,6 +1138,34 @@ const getCompletedOrders = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message || error });
   }
 };
+
+
+export const getCompletedOrdersFU = async (req, res) => {
+  try {
+    const userId = req.userId; // ✅ Injected from JWT by authMiddleware
+
+    // ✅ Fetch completed orders for the authenticated user
+    const completedOrders = await OrderModel.find({
+      userId,
+      status: 'Completed',
+    })
+      .populate('boutiqueId', 'name') // 🎯 Only fetch boutique name
+      .select('dressType status bill.totalAmount createdAt referralImage boutiqueId') // 🧾 Include referral image
+
+    if (!completedOrders.length) {
+      return res.status(200).json({ message: "No completed orders found", orders: [] });
+    }
+
+    return res.status(200).json({
+      message: "Completed orders fetched successfully",
+      orders: completedOrders,
+    });
+  } catch (error) {
+    console.error("Error fetching completed orders:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 
 
 
