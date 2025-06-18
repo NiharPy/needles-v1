@@ -7,7 +7,7 @@ import { refreshAccessToken, publicMiddleware } from '../utils/auth-user.js';
 import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDressTypes,getSleeveImages, viewODDOrders, getODDOrderDetails} from '../controllers/ODdelivery-controller.js';
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
-import { updateUserLocation, UserLogout } from '../controllers/user-controller.js';
+import { updateUserLocation, logout, getUserDetails, updateUserName} from '../controllers/user-controller.js';
 import { getBill, processPayment } from '../controllers/order-controller.js';
 import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.js';
 const router = express.Router();
@@ -22,7 +22,11 @@ router.route("/login").post(Userlogin);
 
 router.route("/verify-otp").post(verifyOtp);
 
-router.route("/:userId/logout").post(authMiddleware,UserLogout);
+router.get("/profile", authMiddleware, getUserDetails);
+
+router.put("/update-name", authMiddleware, updateUserName);
+
+router.route("/logout").post(authMiddleware,logout);
 
 router.route("/search").get(authMiddleware,boutiqueSearch);//searchpage
 

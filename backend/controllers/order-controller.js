@@ -818,7 +818,7 @@ const createBill = async (req, res) => {
     // ✅ Set status to Accepted
     order.status = "Accepted";
 
-    let totalAmount = 0;
+    let itemAmount = 0;
     let billDetails = {};
 
     // ✅ Calculate item total
@@ -827,13 +827,18 @@ const createBill = async (req, res) => {
       if (catalogItem) {
         const price = catalogItem.price[0] * quantity;
         billDetails[item] = price;
-        totalAmount += price;
+        itemAmount += price;
       }
     });
 
-    // ✅ Platform fee (2%)
-    const platformFee = totalAmount * 0.02;
-    totalAmount += platformFee;
+    // ✅ Commission calculations
+    const boutiqueCommission = itemAmount * 0.05; // 5%
+    const userPlatformFee = itemAmount * 0.02;     // 2%
+    const gstOnBoutique = boutiqueCommission * 0.18;
+    const gstOnUser = userPlatformFee * 0.18;
+
+    // ✅ User pays their fee + GST
+    let totalAmount = itemAmount + userPlatformFee + gstOnUser;
 
     // ✅ Delivery fee
     const userLocation = order.userId.address.location;
@@ -860,20 +865,22 @@ const createBill = async (req, res) => {
       }
     }
 
-    // ✅ GST (12%)
-    const gst = totalAmount * 0.12;
-    totalAmount += gst;
-
     // ✅ Update order bill
     order.bill = {
       items: billDetails,
-      platformFee,
+      platformFee: userPlatformFee,
       deliveryFee,
       additionalCost: {
         amount: additionalCostValue,
         reason: additionalCostReason,
       },
-      gst,
+      gst: {
+        onBoutiqueCommission: gstOnBoutique,
+        onUserFee: gstOnUser,
+        total: gstOnBoutique + gstOnUser,
+        rate: 18,
+      },
+      boutiqueCommission,
       totalAmount,
       status: "Pending",
       generatedAt: new Date(),
@@ -883,7 +890,7 @@ const createBill = async (req, res) => {
     order.totalAmount = totalAmount;
     await order.save();
 
-    // ✅ Send response (no Twilio)
+    // ✅ Send response
     res.status(200).json({
       message: "Bill created successfully",
       bill: order.bill,
@@ -895,6 +902,7 @@ const createBill = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 

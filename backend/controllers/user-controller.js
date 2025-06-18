@@ -235,28 +235,85 @@ const verifyOtp = async (req, res) => {
   };  
   
 
-  const UserLogout = async function (req, res) {
+ export const logout = async (req, res) => {
     try {
-      const token = req.headers.authorization?.split(" ")[1]; // Extract token from header
+      const authHeader = req.headers.authorization;
   
-      if (!token) {
-        return res.status(400).json({ message: "No token provided." });
+      if (!authHeader?.startsWith("Bearer ")) {
+        return res.status(401).json({ message: "Access token missing or invalid." });
       }
   
-      const decoded = jwt.decode(token); // Decode token to get expiration time
+      const token = authHeader.split(" ")[1];
   
-      // Save token to blacklist
-      await BlacklistedToken.create({
-        token,
-        expiresAt: new Date(decoded.exp * 1000), // JWT expiry time
-      });
+      // 🛑 Blacklist the access token
+      await BlacklistedToken.create({ token });
   
-      res.status(200).json({ message: "Logged out successfully." });
+      // 🔐 Remove refresh token from user model
+      const userId = req.userId; // Injected by authMiddleware
+      const user = await UserModel.findById(userId);
+  
+      if (user) {
+        user.refreshToken = null; // Clear stored refresh token
+        await user.save();
+      }
+  
+      return res.status(200).json({ message: "Logged out successfully." });
     } catch (error) {
-      console.error("Error during logout:", error);
-      res.status(500).json({ message: "An error occurred during logout." });
+      console.error("Logout error:", error);
+      return res.status(500).json({ message: "Internal server error." });
     }
   };
+
+  export const getUserDetails = async (req, res) => {
+    try {
+      const userId = req.userId; // injected by authMiddleware
+  
+      const user = await UserModel.findById(userId).select({
+        name: 1,
+        phone: 1,
+        "address.flatNumber": 1,
+        "address.block": 1,
+        "address.street": 1,
+      });
+  
+      if (!user) {
+        return res.status(404).json({ message: "User not found." });
+      }
+  
+      res.status(200).json({ user });
+    } catch (error) {
+      console.error("Error fetching user details:", error);
+      res.status(500).json({ message: "Internal server error." });
+    }
+  };
+
+  export const updateUserName = async (req, res) => {
+    try {
+      const userId = req.userId; // Injected by authMiddleware
+      const { name } = req.body;
+  
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "Name is required and must be a valid string." });
+      }
+  
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        userId,
+        { name: name.trim() },
+        { new: true, select: "name phone" }
+      );
+  
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found." });
+      }
+  
+      res.status(200).json({ message: "Name updated successfully.", user: updatedUser });
+    } catch (error) {
+      console.error("Error updating user name:", error);
+      res.status(500).json({ message: "Internal server error." });
+    }
+  };
+  
+  
 
 
   export const getAllBoutiqueAreas = async (req, res) => {
