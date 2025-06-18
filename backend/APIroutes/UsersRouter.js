@@ -8,7 +8,6 @@ import { getDressTypes, getBackImages, placeODOrder, getFrontImages, getSubDress
 import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation, logout, getUserDetails, updateUserName} from '../controllers/user-controller.js';
-import { getBill, processPayment } from '../controllers/order-controller.js';
 import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.js';
 const router = express.Router();
 
