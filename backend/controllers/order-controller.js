@@ -794,14 +794,14 @@ const createBill = async (req, res) => {
     const boutiqueId = req.user.userId;
 
     if (!mongoose.Types.ObjectId.isValid(orderId) || !mongoose.Types.ObjectId.isValid(boutiqueId)) {
-      return res.status(400).json({ error: "Invalid IDs" });
+      return res.status(400).json({ error: "Invalid order ID or boutique ID" });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     const order = await OrderModel.findById(orderId).populate("userId");
 
     if (!boutique || !order) return res.status(404).json({ error: "Boutique or Order not found" });
-    if (order.status === "Declined") return res.status(400).json({ message: "Order was declined." });
+    if (order.status === "Declined") return res.status(400).json({ message: "Cannot generate bill for a declined order." });
 
     order.status = "Accepted";
 
@@ -829,17 +829,22 @@ const createBill = async (req, res) => {
       }
     }
 
+    // Calculations
     const platformFee = subtotal * 0.015;
     const boutiqueCommission = subtotal * 0.05;
     const gstOnPlatformFee = platformFee * 0.18;
     const gstOnBoutiqueCommission = boutiqueCommission * 0.18;
 
+    // Delivery fee (₹5 per km)
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
-    const deliveryFee = calculateDeliveryFee(distance);
-    const totalAmount = subtotal + platformFee + gstOnPlatformFee + deliveryFee;
+    const deliveryFee = calculateDeliveryFee(distance); // ₹5 per km
 
+    const totalAmount = subtotal + platformFee + gstOnPlatformFee + deliveryFee;
+    const generatedAt = new Date();
+
+    // Save bill
     order.bill = {
       items: billDetails,
       subtotal,
@@ -858,29 +863,31 @@ const createBill = async (req, res) => {
       boutiqueCommission,
       totalAmount,
       status: "Pending",
-      generatedAt: new Date(),
+      generatedAt,
     };
 
     order.markModified("bill");
     order.totalAmount = totalAmount;
     await order.save();
 
-    // 📨 Send commission + GST email to admin
-    const subject = `🧾 New Bill Created for Boutique: ${boutique.name}`;
+    // Email admin
+    const subject = `🧾 New Bill Created - ${boutique.name}`;
     const text = `
-A new order bill has been generated.
+A new bill has been generated for an order.
 
-Boutique Name: ${boutique.name}
-Boutique ID: ${boutique._id}
+🧵 Boutique Name: ${boutique.name}
+🆔 Boutique ID: ${boutique._id}
 
-Commission (5%): ₹${boutiqueCommission.toFixed(2)}
-GST on Commission (18%): ₹${gstOnBoutiqueCommission.toFixed(2)}
+💸 Boutique Commission (5%): ₹${boutiqueCommission.toFixed(2)}
+🧾 GST on Commission (18%): ₹${gstOnBoutiqueCommission.toFixed(2)}
 
-Total: ₹${totalAmount.toFixed(2)}
-Status: ${order.status}
+📦 Total Amount (Customer pays): ₹${totalAmount.toFixed(2)}
+📍 Delivery Distance: ${distance} km
+📅 Generated At: ${generatedAt.toISOString()}
 
-Generated At: ${order.bill.generatedAt.toISOString()}
-    `;
+🧾 Platform Fee (1.5%): ₹${platformFee.toFixed(2)}
+🧾 GST on Platform Fee: ₹${gstOnPlatformFee.toFixed(2)}
+`;
 
     await sendEmailToAdmin(subject, text);
 
@@ -896,7 +903,6 @@ Generated At: ${order.bill.generatedAt.toISOString()}
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 
 
 
