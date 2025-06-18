@@ -349,5 +349,5 @@ const verifyOtp = async (req, res) => {
 
 export { updateUserLocation };
   
-export { registerUser, verifyOtp };
+export { registerUser, verifyOtp, Userlogin  };
   
