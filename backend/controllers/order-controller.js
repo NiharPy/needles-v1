@@ -1032,7 +1032,7 @@ const viewBill = async (req, res) => {
       subtotal: bill.subtotal, // if you're storing this
       items: bill.items,
       platformFee: bill.platformFee,
-      gst: bill.gst?.onUserFee,
+      gst: bill.gst?.onPlatformFee,
       deliveryFee: bill.deliveryFee,
       additionalCost: bill.additionalCost,
       totalAmount: bill.totalAmount,
