@@ -1001,24 +1001,21 @@ cloudinary.config({
 const viewBill = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const userId = req.userId; // ⬅️ Securely injected from JWT by auth middleware
+    const userId = req.userId;
 
-    // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: "Invalid order ID" });
     }
 
-    // Find the order and populate boutique details
     const order = await OrderModel.findById(orderId)
       .populate("boutiqueId", "name")
       .populate("userId", "_id")
-      .select("bill _id boutiqueId userId status");
+      .select("bill _id boutiqueId userId");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // Ensure the user owns the order
     if (order.userId._id.toString() !== userId) {
       return res.status(403).json({ message: "Unauthorized access to this bill" });
     }
@@ -1027,17 +1024,20 @@ const viewBill = async (req, res) => {
       return res.status(400).json({ message: "Bill not available for this order" });
     }
 
-    // Format the bill details
+    const bill = order.bill;
+
     const billDetails = {
       orderId: order._id,
       boutiqueName: order.boutiqueId.name,
-      items: order.bill.items,
-      platformFee: order.bill.platformFee,
-      deliveryFee: order.bill.deliveryFee,
-      additionalCost: order.bill.additionalCost,
-      gst: order.bill.gst,
-      totalAmount: order.bill.totalAmount,
-      status: order.bill.status, // 🔄 Fetch bill status, not order status
+      subtotal: bill.subtotal, // if you're storing this
+      items: bill.items,
+      platformFee: bill.platformFee,
+      gst: bill.gst?.onUserFee,
+      deliveryFee: bill.deliveryFee,
+      additionalCost: bill.additionalCost,
+      totalAmount: bill.totalAmount,
+      status: bill.status,
+      generatedAt: bill.generatedAt,
     };
 
     res.status(200).json({
