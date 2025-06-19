@@ -1346,6 +1346,32 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 };
 
 
+export const getTopRatedBoutiques = async (req, res) => {
+  try {
+    const userId = req.userId; // 🧑‍💼 Injected by authMiddleware
+    console.log("Request made by user:", userId);
+
+    const topBoutiques = await BoutiqueModel.find({ averageRating: { $gt: 0 } })
+      .sort({ averageRating: -1, totalRatings: -1 })
+      .limit(5)
+      .select("name averageRating totalRatings headerImage area dressTypes");
+
+    return res.status(200).json({
+      success: true,
+      userId, // ✅ Optionally return it in response
+      data: topBoutiques,
+    });
+  } catch (error) {
+    console.error("Error fetching top rated boutiques:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch top rated boutiques.",
+    });
+  }
+};
+
+
+
 
 const addDressType = async (req, res) => {
   try {

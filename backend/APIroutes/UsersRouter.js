@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType, getTopRatedBoutiques} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, getAllBoutiqueAreas, Userlogin } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewPaidOrders, viewPendingOrders ,viewBill, cancelOrder, rejectOrderBill, markBillAsPaid, getUserPendingOrders, getCompletedOrdersFU } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -20,6 +20,8 @@ router.route("/signup").post(registerUser);
 router.route("/login").post(Userlogin);
 
 router.route("/verify-otp").post(verifyOtp);
+
+router.get("/top-rated", authMiddleware, getTopRatedBoutiques);
 
 router.get("/profile", authMiddleware, getUserDetails);
 
