@@ -63,6 +63,7 @@ const orderSchema = new mongoose.Schema({
     enum: ['Pending', 'Accepted', 'Declined', 'In Progress', 'Ready for Delivery', 'Completed', 'Cancelled'],
     default: 'Pending',
   },
+  rated: { type: Boolean, default: false },
   totalAmount: { type: Number, default: 0 },
   bill: {
     items: {
