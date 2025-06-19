@@ -1182,8 +1182,6 @@ export {getBoutiqueOrders};
 export default sendEmailToAdmin;
 
 
-export { rateOrder };
-
 export {getOrderDetails};
 export {placeOrder};
 export {updateOrderStatus, viewPaidOrders, viewBill, cancelOrder};
