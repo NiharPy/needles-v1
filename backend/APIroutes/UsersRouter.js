@@ -33,10 +33,6 @@ router.route("/search").get(authMiddleware,boutiqueSearch);//searchpage
 
 router.route("/boutique/:boutiqueId").get(authMiddleware, viewBoutiqueDetails);
 
-//router.route("/:userId/boutique/:boutiqueId/dressTypes").get(authMiddleware,getDressTypesWithDetails);
-
-//router.route("/:userId/boutique/:boutiqueId/dressTypes/:dressType").get(authMiddleware,getDressTypeImages);
-
 router.route("/:boutiqueId/catalogue").get(authMiddleware,getBoutiqueCatalogueFU);
 
 router.route('/order/place').post(authMiddleware, upload.fields([
@@ -85,35 +81,35 @@ router.route("/refresh-token").post(refreshAccessToken);
 //router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
 //odd
-router.route('/:userId/ODDorder').get(authMiddleware,viewODDOrders);
+//router.route('/:userId/ODDorder').get(authMiddleware,viewODDOrders);
 
-router.route('/:userId/ODDorder/:orderId').get(authMiddleware, getODDOrderDetails);
+//router.route('/:userId/ODDorder/:orderId').get(authMiddleware, getODDOrderDetails);
 
-router.route("/:userId/odd/dresstypes").get(authMiddleware,getDressTypes);
+//router.route("/:userId/odd/dresstypes").get(authMiddleware,getDressTypes);
 
-router.route("/:userId/odd/select/:dressType/subdresstype").get(authMiddleware, getSubDressTypes);
+//router.route("/:userId/odd/select/:dressType/subdresstype").get(authMiddleware, getSubDressTypes);
 
-router.route("/:userId/odd/select/:dressType/Front").get(authMiddleware, getFrontImages);
+//router.route("/:userId/odd/select/:dressType/Front").get(authMiddleware, getFrontImages);
 
-router.route("/:userId/odd/select/:dressType/:subdresstype/Front").get(authMiddleware, getFrontImages);
+//router.route("/:userId/odd/select/:dressType/:subdresstype/Front").get(authMiddleware, getFrontImages);
 
-router.route("/:userId/odd/select/:dressType/:subdresstype/Back").get(authMiddleware, getBackImages);
+//router.route("/:userId/odd/select/:dressType/:subdresstype/Back").get(authMiddleware, getBackImages);
 
-router.route("/:userId/odd/select/:dressType/:subdresstype/Sleeve").get(authMiddleware,getSleeveImages);
+//router.route("/:userId/odd/select/:dressType/:subdresstype/Sleeve").get(authMiddleware,getSleeveImages);
 
-router.route("/:userId/odd/order-placed").post(authMiddleware,placeODOrder);
+//router.route("/:userId/odd/order-placed").post(authMiddleware,placeODOrder);
 
 export default router;
 
 //CAAS
 
-router.route('/:userId/CAASorder').get(authMiddleware, viewCAASOrders);
+//router.route('/:userId/CAASorder').get(authMiddleware, viewCAASOrders);
 
-router.route("/:userId/CAAS/dresstypes").get(authMiddleware,getDressTypes);
+//router.route("/:userId/CAAS/dresstypes").get(authMiddleware,getDressTypes);
 
-router.route("/:userId/CAAS/select/:dressType/Body").get(authMiddleware, getFrontImages);
+//router.route("/:userId/CAAS/select/:dressType/Body").get(authMiddleware, getFrontImages);
 
-router.route("/:userId/CAAS/select/:dressType/Hands").get(authMiddleware, getBackImages);
+//router.route("/:userId/CAAS/select/:dressType/Hands").get(authMiddleware, getBackImages);
 
-router.route("/:userId/CAAS/order-placed").post(authMiddleware,placeCAASOrder);
+//router.route("/:userId/CAAS/order-placed").post(authMiddleware,placeCAASOrder);
 
