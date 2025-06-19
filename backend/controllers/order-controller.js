@@ -556,7 +556,7 @@ export const rateOrder = async (req, res) => {
 
     // ✅ Recalculate averageRating
     const sumRatings = boutique.ratings.reduce((sum, r) => sum + r.rating, 0);
-    boutique.averageRating = sumRatings / boutique.totalRatings;
+    boutique.averageRating = sumRatings / boutique.ratings.length;
 
     await boutique.save();
 
