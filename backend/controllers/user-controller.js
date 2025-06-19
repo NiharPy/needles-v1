@@ -29,6 +29,24 @@ const registerUser = async function (req, res) {
 
     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
+    let formattedAddress = null;
+    const lat = address.location?.lat;
+    const lng = address.location?.lng;
+
+    if (lat && lng) {
+      try {
+        formattedAddress = await getPlaceNameFromLatLng(lat, lng);
+        console.log("Formatted Address Found:", formattedAddress);
+        if (!formattedAddress) {
+          formattedAddress = "Address not found";
+          console.log("No formatted address found.");
+        }
+      } catch (error) {
+        console.error("Error fetching formatted address:", error.message);
+        return res.status(400).json({ error: "Unable to fetch formatted address" });
+      }
+    }
+
     const CreatedUser = await UserModel.create({
       name,
       phone,
@@ -38,10 +56,11 @@ const registerUser = async function (req, res) {
         flatNumber: address.flatNumber,
         block: address.block,
         street: address.street,
+        formattedAddress, // Add the formatted address from reverse geocoding
         location: {
-          lat: address.location?.lat,
-          lng: address.location?.lng,
-        }
+          lat,
+          lng,
+        },
       },
     });
 
