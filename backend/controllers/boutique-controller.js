@@ -579,7 +579,7 @@ const boutiqueSearch = async function (req, res) {
         ...filter
       })
         .limit(5)
-        .select("name area averageRating catalogue dressTypes");
+        .select("name area averageRating catalogue dressTypes headerImage");
 
       return res.status(200).json({
         message: "Short query keyword-based search",
@@ -601,7 +601,7 @@ const boutiqueSearch = async function (req, res) {
       ...filter,
     })
       .limit(5)
-      .select("name area averageRating catalogue dressTypes");
+      .select("name area averageRating catalogue dressTypes headerImage");
 
     // ✅ If keyword-based was strong enough
     if (keywordResults.length >= 5) {
@@ -649,6 +649,7 @@ const boutiqueSearch = async function (req, res) {
           totalRatings: 1,
           catalogue: 1,
           dressTypes: 1,
+          headerImage: 1,
           score: { $meta: 'searchScore' },
         }
       },

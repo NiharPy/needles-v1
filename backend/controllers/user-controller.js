@@ -10,9 +10,13 @@ import { predefinedHyderabadAreas } from '../constants/areas.js';
 const OTP_EXPIRATION_TIME = 5
 
 
-const registerUser = async function(req, res) {
+const registerUser = async function (req, res) {
   try {
-    let { name, phone } = req.body;
+    let {
+      name,
+      phone,
+      address = {}, // address can be empty if not sent
+    } = req.body;
 
     if (!name || !phone) {
       return res.status(400).send("All fields (name, phone number) are required");
@@ -30,10 +34,17 @@ const registerUser = async function(req, res) {
       phone,
       otp,
       otpExpiry: Date.now() + OTP_EXPIRATION_TIME * 60 * 1000,
+      address: {
+        flatNumber: address.flatNumber,
+        block: address.block,
+        street: address.street,
+        location: {
+          lat: address.location?.lat,
+          lng: address.location?.lng,
+        }
+      },
     });
 
-    // ✅ OTP is generated but NOT sent via Twilio
-    // You may log it for development/debugging:
     console.log(`OTP for ${phone}: ${otp}`);
 
     res.status(200).json({
@@ -52,6 +63,7 @@ const registerUser = async function(req, res) {
     return res.status(500).send("An unexpected error occurred");
   }
 };
+
 
 
 const Userlogin = async function(req, res) {
