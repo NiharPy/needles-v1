@@ -577,20 +577,28 @@ export const rateOrder = async (req, res) => {
 };
 
 export const sendBillNotification = async (userId, billData) => {
-  // ... fetch user and get FCM token
+  const user = await UserModel.findById(userId);
+  if (!user || !user.fcmToken) {
+    console.warn("User not found or FCM token missing");
+    return;
+  }
+
   const message = {
-    token: user.fcmToken,
     notification: {
-      title: '🧾 Bill Generated',
-      body: `Your bill for ₹${billData.totalAmount} is ready.`,
+      title: "🧾 Your Bill is Ready!",
+      body: `Total amount: ₹${billData.totalAmount.toFixed(2)}`,
+    },
+    token: user.fcmToken,
+    data: {
+      orderId: billData._id.toString(),
     },
   };
 
   try {
     await admin.messaging().send(message);
-    console.log('Notification sent');
+    console.log("✅ Bill notification sent via FCM");
   } catch (error) {
-    console.error('FCM Error:', error);
+    console.error("❌ Error sending bill notification:", error);
   }
 };
 
