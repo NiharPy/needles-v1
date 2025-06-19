@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now },
     },
   ],
+  fcmToken: { type: String, default: null },
   ODDorders: [
     {
       orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'ODorder' }, // Reference to ODD Order

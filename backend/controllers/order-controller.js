@@ -11,6 +11,7 @@ import path from 'path';
 import { createWriteStream, unlinkSync } from 'fs';
 import PDFDocument from 'pdfkit';
 import { v2 as cloudinary } from 'cloudinary';
+import admin from '../utils/firebaseAdmin.js';
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -501,7 +502,7 @@ const getOrderDetails = async (req, res) => {
 export const rateOrder = async (req, res) => {
   try {
     const { boutiqueId, rating, comment } = req.body;
-    const userId = req.user.id;
+    const userId = req.userId;
 
     if (rating < 1 || rating > 5) {
       return res.status(400).json({ message: "Rating must be between 1 and 5." });
@@ -572,6 +573,24 @@ export const rateOrder = async (req, res) => {
   } catch (error) {
     console.error("Error while rating boutique:", error);
     res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+export const sendBillNotification = async (userId, billData) => {
+  // ... fetch user and get FCM token
+  const message = {
+    token: user.fcmToken,
+    notification: {
+      title: '🧾 Bill Generated',
+      body: `Your bill for ₹${billData.totalAmount} is ready.`,
+    },
+  };
+
+  try {
+    await admin.messaging().send(message);
+    console.log('Notification sent');
+  } catch (error) {
+    console.error('FCM Error:', error);
   }
 };
 
@@ -853,11 +872,10 @@ const createBill = async (req, res) => {
     const gstOnPlatformFee = platformFee * 0.18;
     const gstOnBoutiqueCommission = boutiqueCommission * 0.18;
 
-    // Delivery fee (₹5 per km)
     const userLocation = order.userId.address.location;
     const boutiqueLocation = boutique.location;
     const distance = await getDistance(userLocation, boutiqueLocation);
-    const deliveryFee = calculateDeliveryFee(distance); // ₹5 per km
+    const deliveryFee = calculateDeliveryFee(distance);
 
     const totalAmount = subtotal + platformFee + gstOnPlatformFee + deliveryFee;
     const generatedAt = new Date();
@@ -888,7 +906,7 @@ const createBill = async (req, res) => {
     order.totalAmount = totalAmount;
     await order.save();
 
-    // Email admin
+    // 📩 Email to admin
     const subject = `🧾 New Bill Created - ${boutique.name}`;
     const text = `
 A new bill has been generated for an order.
@@ -906,11 +924,16 @@ A new bill has been generated for an order.
 🧾 Platform Fee (1.5%): ₹${platformFee.toFixed(2)}
 🧾 GST on Platform Fee: ₹${gstOnPlatformFee.toFixed(2)}
 `;
-
     await sendEmailToAdmin(subject, text);
 
-    res.status(200).json({
-      message: "Bill created successfully and email sent to admin.",
+    // 🔔 Send FCM notification to the user
+    await sendBillNotification(order.userId._id, {
+      _id: order._id,
+      totalAmount,
+    });
+
+    return res.status(200).json({
+      message: "Bill created successfully. Email and notification sent.",
       bill: order.bill,
       orderId: order._id,
       status: order.status,
@@ -921,6 +944,7 @@ A new bill has been generated for an order.
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 

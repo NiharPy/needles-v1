@@ -352,6 +352,21 @@ const verifyOtp = async (req, res) => {
       res.status(500).json({ message: "Server error while fetching areas." });
     }
   };
+
+  export const saveUserFcmToken = async (req, res) => {
+    try {
+      const { token } = req.body;
+      const userId = req.userId;
+      const user = await UserModel.findById(userId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+  
+      user.fcmToken = token;
+      await user.save();
+      res.status(200).json({ message: 'Token saved successfully' });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to save token' });
+    }
+  };
   
   
 
