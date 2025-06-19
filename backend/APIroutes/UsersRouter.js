@@ -80,7 +80,7 @@ router.route('/:userId/alterations/submit').post(upload.fields([
   { name: "voiceNotes", maxCount: 5 }, // Optional, max 5 files
 ]), submitAlterationRequest);
 
-router.route("/:userId/refresh-token").post(refreshAccessToken);
+router.route("/refresh-token").post(refreshAccessToken);
 
 //router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 
