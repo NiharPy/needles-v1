@@ -30,7 +30,7 @@ cron.schedule('* * * * *', async () => {
         'bill.status': 'Pending',
         'bill.generatedAt': { $lte: fortyFiveMinsAgo }
       },
-      { $set: { status: 'Cancelled' } }
+      { $set: { status: 'Rejected' } }
     );
 
     console.log('✅ Order cleanup complete');

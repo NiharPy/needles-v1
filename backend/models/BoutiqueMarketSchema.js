@@ -6,6 +6,12 @@ const boutiqueSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
 
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    required: true,
+  },
+
   // 🔐 OTP and auth fields
   otp: { type: String, default: '' },
 

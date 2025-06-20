@@ -33,8 +33,7 @@ const registerAdmin = async function(req, res) {
       otpExpiry: Date.now() + OTP_EXPIRATION_TIME * 60 * 1000, // Set OTP expiration time
     });
 
-    // Send OTP to the phone number
-    await sendOTP(phone, otp);
+    console.log("otp : ", otp);
 
     // Send success response with userId for OTP verification
     res.status(200).json({
@@ -79,9 +78,6 @@ const adminLogin = async function(req, res) {
       admin.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
       await admin.save();
 
-      // Send OTP to the admin's phone number
-      await sendOTP(phone, otp);
-
       res.status(200).json({
           message: "OTP sent to your phone. Please verify to complete login.",
           userId: admin._id, // Include the admin ID to reference during verification
@@ -95,62 +91,80 @@ const adminLogin = async function(req, res) {
 };
 
 
-const verifyOtp = async (req, res) => {
+const verifyOtpAdmin = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
-    // Validate the request parameters
     if (!phone || !otp) {
       return res.status(400).json({ message: "Phone number and OTP are required." });
     }
 
-    // Find the admin by phone number
     const admin = await AdminModel.findOne({ phone });
-
-    // If admin not found, handle registration case (admin not existing)
     if (!admin) {
-      return res.status(404).json({ message: "Admin not found. Please register first." });
+      return res.status(404).json({ message: "Admin account not found." });
     }
 
-    // Check if the OTP has expired
-    if (Date.now() > admin.otpExpiry) {
-      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    if (!admin.otp || Date.now() > admin.otpExpiry) {
+      return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
-    // Verify the OTP
-    if (otp !== admin.otp) {
+    if (otp.toString() !== admin.otp.toString()) {
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
-    // Successful verification - generate tokens (if not already registered)
-    // If it's registration, we proceed to create the access token and refresh token
+    // ✅ Generate JWT tokens
     const accessToken = jwt.sign(
-      { userId: admin._id, name: admin.name },
+      { userId: admin._id, name: admin.name, role: "admin" },
       process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: "30d" }
+      { expiresIn: "15m" }
     );
+
     const refreshToken = jwt.sign(
       { userId: admin._id },
       process.env.REFRESH_TOKEN_SECRET,
       { expiresIn: "30d" }
     );
 
-    // Save the refresh token (important for session management)
+    // 💾 Save refresh token and clear OTP
     admin.refreshToken = refreshToken;
+    admin.otp = null;
+    admin.otpExpiry = null;
     await admin.save();
 
-    // Send the tokens back to the admin
-    res.status(200).json({
-      message: "Admin authenticated successfully.",
-      accessToken,
-      refreshToken,
+    // 🍪 Set HTTP-only cookies
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      domain: 'needles-v1.onrender.com',
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      domain: 'needles-v1.onrender.com',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    // ✅ Send response
+    res.status(200).json({
+      message: "OTP verified. Admin logged in.",
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        role: "admin",
+      },
+      accessToken,
+    });
+
   } catch (error) {
-    console.error("Error verifying OTP:", error);
-    res.status(500).json({ message: "An error occurred during OTP verification." });
+    console.error("Error verifying admin OTP:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 };
 
 
 
-export {registerAdmin, adminLogin, verifyOtp};
+export {registerAdmin, adminLogin, verifyOtpAdmin};

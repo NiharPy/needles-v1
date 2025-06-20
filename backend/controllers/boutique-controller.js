@@ -32,17 +32,25 @@ const CreateBoutique = async function (req, res) {
       location,
       dressTypes,
       catalogue,
+      area,
     } = req.body;
+
+    const adminId = req.adminId; // ✅ Injected from JWT
+
+    if (!adminId) {
+      return res.status(401).json({ message: "Admin ID missing from token" });
+    }
 
     // ✅ Validate required fields
     if (!name || !password || !email || !location || !phone || !dressTypes) {
       return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
-    // ✅ Parse stringified fields
+    // ✅ Parse fields
     const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
     const parsedDressTypes = typeof dressTypes === 'string' ? JSON.parse(dressTypes) : dressTypes;
     const parsedCatalogue = catalogue && typeof catalogue === 'string' ? JSON.parse(catalogue) : [];
+    const parsedArea = typeof area === 'string' ? area.trim() : area;
 
     // ✅ Upload header image to Cloudinary (if present)
     let headerImageUrl = '';
@@ -53,8 +61,9 @@ const CreateBoutique = async function (req, res) {
       headerImageUrl = result.secure_url;
     }
 
-    // ✅ Create boutique WITHOUT embedding
+    // ✅ Create boutique
     const CreatedBoutique = await BoutiqueModel.create({
+      adminId, // ✅ Inject adminId here
       name,
       email,
       password,
@@ -63,9 +72,10 @@ const CreateBoutique = async function (req, res) {
       dressTypes: parsedDressTypes,
       headerImage: headerImageUrl,
       catalogue: parsedCatalogue,
+      area: parsedArea,
     });
 
-    // ✅ Generate a semantic string for embedding
+    // ✅ Generate embedding
     const combinedText = `
       Boutique name: ${name}
       Location: ${parsedLocation?.address || ''}
@@ -74,10 +84,7 @@ const CreateBoutique = async function (req, res) {
       Rating: ${CreatedBoutique.rating || 'No rating yet'}
     `;
 
-    // ✅ Get vector embedding
-    const embedding = await getEmbedding(combinedText); // returns an array of numbers
-
-    // ✅ Save embedding in the boutique document
+    const embedding = await getEmbedding(combinedText);
     CreatedBoutique.embedding = embedding;
     await CreatedBoutique.save();
 
@@ -93,6 +100,7 @@ const CreateBoutique = async function (req, res) {
     return res.status(500).send("An unexpected error occurred");
   }
 };
+
 
 export const updateBoutiqueEmbedding = async (boutiqueId) => {
   const boutique = await BoutiqueModel.findById(boutiqueId).lean();
