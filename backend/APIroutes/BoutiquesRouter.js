@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypesWithDetails, getOrdersByStatus, addHeaderImage, deleteHeaderImage, updateBoutiqueDetails} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, Boutiquelogin, verifyOtpFB, addItemToCatalogue, deleteItemFromCatalogue, addDressType, deleteDressType, getBoutiqueCatalogue, trackBusiness, getDressTypesWithDetails, getOrdersByStatus, addHeaderImage, deleteHeaderImage, updateBoutiqueDetails, getViews, getTopDressType, getAnalyticsData} from '../controllers/boutique-controller.js';
 import { changePassword, requestPhoneNumberChange, confirmPhoneNumberChange, logoutBoutique , deleteAllHeaderImages, getBoutiqueAreas} from '../controllers/boutique-controller.js';
 import authMiddleware from '../utils/auth-boutique.js';
 import { updateOrderStatus, reviewAlterationRequest, respondToAlterationRequest, getAlterationRequestsForBoutique, getBoutiqueOrders, getCompletedOrders, getActiveAlterationRequests} from '../controllers/order-controller.js';
@@ -15,7 +15,11 @@ router.route("/verify-otp").post(verifyOtpFB);
 
 router.route("/search").get(boutiqueSearch);
 
-router.route('/:boutiqueId/track').get(authMiddleware, trackBusiness); //for profile, dont use yet
+router.get('/analytics/views', authMiddleware, getViews); //analytics
+
+router.get('/top-dressType', authMiddleware, getTopDressType); //analytics
+
+router.get('/analytics', authMiddleware, getAnalyticsData); //analytics
 
 router.route("/").get(authMiddleware,boutiquesData); //for profile
 

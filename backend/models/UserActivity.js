@@ -9,6 +9,7 @@ const userInteractionSchema = new mongoose.Schema({
     type: [Number], // 🔗 Precomputed embedding for this interaction
     required: true,
   },
+  boutiqueId: { type: mongoose.Schema.Types.ObjectId, ref: 'Boutique' }
 });
 
 const UserInteraction = mongoose.model('UserInteraction', userInteractionSchema);

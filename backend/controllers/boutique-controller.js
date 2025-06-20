@@ -15,6 +15,8 @@ import axios from "axios";
 import dotenv from 'dotenv';
 import { redis } from '../config/redis.js';
 
+const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
+
 dotenv.config();
 
 cloudinary.config({
@@ -1378,6 +1380,55 @@ export const getTopRatedBoutiques = async (req, res) => {
     });
   }
 };
+
+
+
+// Use this in protected routes with accessToken in headers
+export const getViews = async (req, res) => {
+  try {
+    const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique/views`, {
+      headers: {
+        Authorization: req.headers.authorization, // Pass JWT
+      },
+    });
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("Error fetching views:", error?.response?.data || error.message);
+    return res.status(500).json({ error: "Failed to fetch views." });
+  }
+};
+
+export const getTopDressType = async (req, res) => {
+  try {
+    const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique/top-dressType`, {
+      headers: {
+        Authorization: req.headers.authorization,
+      },
+    });
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("Error fetching top dress type:", error?.response?.data || error.message);
+    return res.status(500).json({ error: "Failed to fetch top dress type." });
+  }
+};
+
+export const getAnalyticsData = async (req, res) => {
+  try {
+    const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique`, {
+      headers: {
+        Authorization: req.headers.authorization,
+      },
+    });
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("Error fetching analytics:", error?.response?.data || error.message);
+    return res.status(500).json({ error: "Failed to fetch analytics data." });
+  }
+};
+
 
 
 

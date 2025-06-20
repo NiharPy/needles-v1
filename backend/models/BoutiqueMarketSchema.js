@@ -9,7 +9,7 @@ const boutiqueSchema = new mongoose.Schema({
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin',
-    required: true,
+    required: false,
   },
 
   // 🔐 OTP and auth fields
