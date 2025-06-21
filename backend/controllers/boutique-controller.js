@@ -408,6 +408,12 @@ const Boutiquelogin = async function (req, res) {
     Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in milliseconds
     await Boutique.save();
 
+    const result = await sendOTP(phone, otp);
+
+    if (!result.success) {
+      return res.status(500).json({ message: "Failed to send OTP", error: result.error });
+    }
+
     // Twilio logic removed — optionally log OTP for testing
     console.log(`Generated OTP for ${phone}: ${otp}`);
 
@@ -1679,25 +1685,25 @@ export const getBoutiqueAreas = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized. Boutique ID missing from token." });
     }
 
-    // ✅ Get all boutique areas
+    // 🔍 Fetch all boutiques and extract used areas
     const boutiques = await BoutiqueModel.find({}, 'area').lean();
-    
-    // Filter areas that are defined in enum list
-    const usedAreas = [
-      ...new Set(
-        boutiques
-          .map(b => b.area?.trim())
-          .filter(area => predefinedHyderabadAreas.includes(area))
-      ),
-    ];
+    const usedAreaSet = new Set(
+      boutiques.map(b => b.area?.trim()).filter(Boolean)
+    );
+
+    // 📋 Map predefined areas with usage flag
+    const areas = predefinedHyderabadAreas.map(area => ({
+      area,
+      inUse: usedAreaSet.has(area),
+    }));
 
     res.status(200).json({
       success: true,
-      message: "All boutique areas (filtered from predefined list)",
-      areas: usedAreas,
+      message: "All predefined areas with usage info",
+      areas,
     });
   } catch (err) {
-    console.error("Error fetching boutique areas:", err.message);
+    console.error("❌ Error fetching boutique areas:", err.message);
     res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };

@@ -5,7 +5,7 @@ dotenv.config();
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const messagingServiceSid = process.env.TWILIO_MESSAGING_SID;
+const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
 const client = twilio(accountSid, authToken);
 
@@ -16,14 +16,16 @@ const sendOTP = async (phone, otp) => {
 
     const message = await client.messages.create({
       body: `Your OTP is ${otp}. It is valid for 5 minutes.`,
-      messagingServiceSid: messagingServiceSid,
+      messagingServiceSid,
       to: formattedPhone,
     });
 
-    console.log("OTP sent successfully to", formattedPhone, message.sid);
+    console.log("✅ OTP sent successfully to", formattedPhone, message.sid);
+
+    return { success: true, sid: message.sid }; // ✅ return result
   } catch (error) {
-    console.error("Error sending OTP:", error);
-    throw new Error("Failed to send OTP.");
+    console.error("❌ Error sending OTP:", error);
+    return { success: false, error }; // ✅ always return an object
   }
 };
 

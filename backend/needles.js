@@ -25,7 +25,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000', // ✅ local dev
     'https://boutique-app-needles.vercel.app',// ✅ production frontend on Vercel
-    'http://localhost:5173' // local dev for Admin
+    'http://localhost:5173', // local dev for Admin
+    'https://needles-admin.vercel.app' // prod for Admin
   ], // or your deployed frontend domain
   credentials: true,               // allow httpOnly cookies
 }));
@@ -55,11 +56,4 @@ app.listen(port, () => {
 
 // === Log Environment Info ===
 console.log(`Database URI: ${config.DB_URI}`);
-console.log(`Log Level: ${config.LOG_LEVEL}`);
-console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
-console.log('Twilio Account SID:', process.env.TWILIO_ACCOUNT_SID);
-console.log('Twilio Auth Token:', process.env.TWILIO_AUTH_TOKEN);
-console.log('Twilio Messaging Service SID:', process.env.TWILIO_MESSAGING_SERVICE_SID);
-console.log("Loaded OpenAI Key:", process.env.OPENAI_API_KEY);
-
 

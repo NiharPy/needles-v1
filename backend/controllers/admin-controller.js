@@ -8,89 +8,97 @@ const OTP_EXPIRATION_TIME = 5;
 
 const registerAdmin = async function(req, res) {
   try {
-    // Ensure only one admin exists
-    const existingAdmin = await AdminModel.findOne();
-    if (existingAdmin) {
-      return res.status(409).send("Admin already exists. Only one admin can be created.");
-    }
-
     let { name, phone } = req.body;
-    if (!name || !phone) {  // Ensure both name and phone are provided
+
+    // ✅ Validate input
+    if (!name || !phone) {
       return res.status(400).send("Both name and phone number are required.");
     }
 
-    // Check if the phone number is already registered
+    // ✅ Check if phone number is already used
     const adminWithPhone = await AdminModel.findOne({ phone });
     if (adminWithPhone) {
       return res.status(409).send("Phone number already exists.");
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000); // Generate a 6-digit OTP
+    // ✅ Check admin count limit
+    const adminCount = await AdminModel.countDocuments();
+    if (adminCount >= 10) {
+      return res.status(403).send("Admin limit reached. Cannot create more than 10 admins.");
+    }
 
-    // Create new admin with OTP and expiration time
+    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+
+    // ✅ Create new admin with OTP and expiry
     const createdAdmin = await AdminModel.create({
-      username: name, // Assuming name is used as the username
+      username: name,
       phone,
       otp,
-      otpExpiry: Date.now() + OTP_EXPIRATION_TIME * 60 * 1000, // Set OTP expiration time
+      otpExpiry: Date.now() + OTP_EXPIRATION_TIME * 60 * 1000, // in ms
     });
 
-    console.log("otp : ", otp);
+    console.log("OTP sent to admin:", otp);
 
-    // Send success response with userId for OTP verification
+    // ✅ Send success response
     res.status(200).json({
       message: "OTP sent to your phone. Please verify to complete registration.",
-      userId: createdAdmin._id, // Include the admin ID for later verification
+      userId: createdAdmin._id,
     });
 
   } catch (error) {
-    console.error("Error creating Admin:", error.message);
-    console.error("Stack trace:", error.stack);
+    console.error("❌ Error creating Admin:", error.message);
+    console.error("📍 Stack trace:", error.stack);
 
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       return res.status(422).json({ error: error.message, details: error.errors });
     }
 
-    // Handle any unexpected errors
     return res.status(500).send("An unexpected error occurred");
   }
 };
 
-const adminLogin = async function(req, res) {
+
+const adminLogin = async function (req, res) {
   try {
-      const { phone } = req.body;
+    const { phone } = req.body;
 
-      // Validate phone number input
-      if (!phone) {
-          return res.status(400).json({ message: "Phone number is required." });
-      }
+    // ✅ Validate phone number input
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required." });
+    }
 
-      // Check if the admin exists
-      const admin = await AdminModel.findOne({ phone });
-      if (!admin) {
-          return res.status(404).json({ message: "Admin not found. Please register first." });
-      }
+    // ✅ Check if the admin exists
+    const admin = await AdminModel.findOne({ phone });
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found. Please register first." });
+    }
 
-      // Generate a new OTP
-      const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    // ✅ Generate a new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
-      // Update the OTP and expiration time in the database
-      admin.otp = otp;
-      admin.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
-      await admin.save();
+    // ✅ Update the OTP and expiration time in the database
+    admin.otp = otp;
+    admin.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
+    await admin.save();
 
-      console.log(`📲 OTP for admin ${admin.phone}: ${admin.otp}`)
+    // ✅ Send OTP via WhatsApp or SMS
+    const result = await sendOTP(phone, otp);
 
-      res.status(200).json({
-          message: "OTP sent to your phone. Please verify to complete login.",
-          userId: admin._id, // Include the admin ID to reference during verification
-      });
+    if (!result.success) {
+      return res.status(500).json({ message: "Failed to send OTP", error: result.error });
+    }    
+
+    console.log(`📲 OTP for admin ${admin.phone}: ${admin.otp}`);
+
+    return res.status(200).json({
+      message: "OTP sent to your phone. Please verify to complete login.",
+      userId: admin._id,
+    });
   } catch (error) {
-      console.error("Error during admin login:", error.message);
-      console.error("Stack trace:", error.stack);
+    console.error("Error during admin login:", error.message);
+    console.error("Stack trace:", error.stack);
 
-      res.status(500).json({ message: "An unexpected error occurred during login." });
+    return res.status(500).json({ message: "An unexpected error occurred during login." });
   }
 };
 
