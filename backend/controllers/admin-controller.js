@@ -177,21 +177,23 @@ export const getAllBoutiqueAreasForAdmin = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized. Admin ID missing from token." });
     }
 
-    // ✅ Fetch all boutique areas
+    // ✅ Get all used areas from existing boutiques
     const boutiques = await BoutiqueModel.find({}, 'area').lean();
 
-    const usedAreas = [
-      ...new Set(
-        boutiques
-          .map(b => b.area?.trim())
-          .filter(area => predefinedHyderabadAreas.includes(area))
-      ),
-    ];
+    const usedAreaSet = new Set(
+      boutiques.map(b => b.area?.trim()).filter(Boolean)
+    );
+
+    // ✅ Map predefined areas and mark if they're in use
+    const areas = predefinedHyderabadAreas.map(area => ({
+      area,
+      inUse: usedAreaSet.has(area),
+    }));
 
     res.status(200).json({
       success: true,
-      message: "All boutique areas (filtered from predefined list)",
-      areas: usedAreas,
+      message: "All predefined areas with usage info",
+      areas,
     });
   } catch (err) {
     console.error("❌ Error fetching boutique areas for admin:", err.message);
