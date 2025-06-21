@@ -1,6 +1,8 @@
 import AdminModel from '../models/AdminSchema.js';
 import { sendOTP } from '../utils/otpService.js';
 import jwt from 'jsonwebtoken';
+import BoutiqueModel from '../models/BoutiqueMarketSchema.js';
+import { predefinedHyderabadAreas } from '../constants/areas.js';
  // Assuming you have a separate service to send OTPs
 const OTP_EXPIRATION_TIME = 5; 
 
@@ -166,6 +168,37 @@ const verifyOtpAdmin = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
+
+export const getAllBoutiqueAreasForAdmin = async (req, res) => {
+  try {
+    const adminId = req.adminId;
+
+    if (!adminId) {
+      return res.status(401).json({ message: "Unauthorized. Admin ID missing from token." });
+    }
+
+    // ✅ Fetch all boutique areas
+    const boutiques = await BoutiqueModel.find({}, 'area').lean();
+
+    const usedAreas = [
+      ...new Set(
+        boutiques
+          .map(b => b.area?.trim())
+          .filter(area => predefinedHyderabadAreas.includes(area))
+      ),
+    ];
+
+    res.status(200).json({
+      success: true,
+      message: "All boutique areas (filtered from predefined list)",
+      areas: usedAreas,
+    });
+  } catch (err) {
+    console.error("❌ Error fetching boutique areas for admin:", err.message);
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
 
 
 
