@@ -78,6 +78,8 @@ const adminLogin = async function(req, res) {
       admin.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
       await admin.save();
 
+      console.log(`📲 OTP for admin ${admin.phone}: ${admin.otp}`)
+
       res.status(200).json({
           message: "OTP sent to your phone. Please verify to complete login.",
           userId: admin._id, // Include the admin ID to reference during verification
