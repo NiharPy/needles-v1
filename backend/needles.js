@@ -24,7 +24,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({
   origin: [
     'http://localhost:3000', // ✅ local dev
-    'https://boutique-app-needles.vercel.app' // ✅ production frontend on Vercel
+    'https://boutique-app-needles.vercel.app',// ✅ production frontend on Vercel
+    'http://localhost:5173' // local dev for Admin
   ], // or your deployed frontend domain
   credentials: true,               // allow httpOnly cookies
 }));
