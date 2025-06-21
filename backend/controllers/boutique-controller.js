@@ -408,11 +408,11 @@ const Boutiquelogin = async function (req, res) {
     Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in milliseconds
     await Boutique.save();
 
-    const result = await sendOTP(phone, otp);
+    //const result = await sendOTP(phone, otp);
 
-    if (!result.success) {
-      return res.status(500).json({ message: "Failed to send OTP", error: result.error });
-    }
+    //if (!result.success) {
+    //  return res.status(500).json({ message: "Failed to send OTP", error: result.error });
+    //}
 
     // Twilio logic removed — optionally log OTP for testing
     console.log(`Generated OTP for ${phone}: ${otp}`);
