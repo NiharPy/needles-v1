@@ -1,5 +1,5 @@
 import express from 'express';
-import { registerAdmin, adminLogin, verifyOtpAdmin } from '../controllers/admin-controller.js';
+import { registerAdmin, adminLogin, verifyOtpAdmin ,getAllBoutiqueAreasForAdmin } from '../controllers/admin-controller.js';
 import { CreateBoutique } from '../controllers/boutique-controller.js';
 import { boutiquesData, boutiqueSearch } from '../controllers/boutique-controller.js';
 import { updateODDDeliveryStatus } from '../controllers/ODdelivery-controller.js';
@@ -19,6 +19,8 @@ router.route('/login').post(adminLogin);
 router.route('/verify-otp').post(verifyOtpAdmin);
 
 router.post('/create-boutique', upload.single('headerImage'),authMiddleware,CreateBoutique);
+
+router.get('/areas', authMiddleware,getAllBoutiqueAreasForAdmin);
 
 router.route('/BoutiqueLocator').get(boutiqueSearch,authMiddleware);
 
