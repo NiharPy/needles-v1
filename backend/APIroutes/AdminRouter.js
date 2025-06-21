@@ -20,7 +20,7 @@ router.route('/verify-otp').post(verifyOtpAdmin);
 
 router.post('/create-boutique', upload.single('headerImage'),authMiddleware,CreateBoutique);
 
-router.get('/areas', authMiddleware,getAllBoutiqueAreasForAdmin);
+router.get('/areas', authMiddleware, getAllBoutiqueAreasForAdmin);
 
 router.route('/BoutiqueLocator').get(boutiqueSearch,authMiddleware);
 
