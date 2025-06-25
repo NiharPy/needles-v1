@@ -1,6 +1,7 @@
 import UserModel from "../models/userschema.js";
 import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
 import fs from 'fs';
+import sharp from 'sharp';
 import { pipeline, RawImage } from '@xenova/transformers';
 import UserInteraction from "../models/UserActivity.js";
 import jwt from "jsonwebtoken";
@@ -405,46 +406,44 @@ const verifyOtp = async (req, res) => {
 
   let embedder = null;
 
+  // 📦 Load once
   async function getEmbedder() {
     if (!embedder) {
       try {
         embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
-      } catch (error) {
-        console.log('Primary model loading failed, trying alternative...');
-        try {
-          embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-        } catch (altError) {
-          console.error('Both model loading attempts failed:', altError);
-          throw new Error('Failed to load embedding model');
-        }
+      } catch (err) {
+        console.warn('Fallback to zero-shot-image-classification');
+        embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
       }
     }
     return embedder;
   }
   
-  // 🧠 Generate embedding from uploaded image (handles both local files and URLs)
-  const generateEmbedding = async (filePath) => {
+  // 🧠 Resize + Embed image (local only)
+  export const generateEmbedding = async (filePath) => {
     try {
       const model = await getEmbedder();
-      
-      // Use RawImage to handle both local files and URLs
-      const image = await RawImage.read(filePath);
+  
+      // ✅ Resize uploaded image to 224x224 and convert to JPEG
+      const resizedBuffer = await sharp(filePath)
+        .resize(224, 224, { fit: 'cover' }) // Important for CLIP
+        .jpeg({ quality: 80 })              // Reduces memory, doesn't harm quality
+        .toBuffer();
+  
+      const image = await RawImage.read(resizedBuffer);
       const result = await model(image);
-      
-      // Handle different result structures
-      if (result.data) {
+  
+      if (result?.data) {
         return Array.from(result.data);
       } else if (Array.isArray(result)) {
         return result.flat();
       } else {
-        // Fallback: create a dummy embedding
-        console.warn('Unexpected result structure, creating dummy embedding');
+        console.warn('Unexpected embedding result. Returning dummy.');
         return new Array(512).fill(0);
       }
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      // Return a dummy embedding instead of failing
-      return new Array(512).fill(Math.random());
+    } catch (err) {
+      console.error('Embedding error:', err);
+      return new Array(512).fill(Math.random()); // Avoid complete failure
     }
   };
   
