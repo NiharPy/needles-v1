@@ -9,6 +9,7 @@ import UserModel from '../models/userschema.js';
 import { upload } from '../utils/cloudinary.js';
 import { updateUserLocation, logout, getUserDetails, updateUserName, saveUserFcmToken} from '../controllers/user-controller.js';
 import { placeCAASOrder, viewCAASOrders } from '../controllers/CAAS-controller.js';
+import { searchSimilarDressImages } from '../controllers/user-controller.js'
 const router = express.Router();
 
 router.get("/", authMiddleware,(req, res) => {
@@ -34,6 +35,8 @@ router.get("/order/Completed", authMiddleware, getCompletedOrdersFU);
 router.route("/logout").post(authMiddleware,logout);
 
 router.route("/search").get(authMiddleware,boutiqueSearch);//searchpage
+
+router.post('/image', authMiddleware, upload.single('image'), authMiddleware ,  searchSimilarDressImages);
 
 router.route("/boutique/:boutiqueId").get(authMiddleware, viewBoutiqueDetails);
 

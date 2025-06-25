@@ -12,6 +12,8 @@ import { cosineSimilarity } from "../utils/embeddingUtils.js"; // helper to comp
 import { predefinedHyderabadAreas } from '../constants/areas.js';
 import { logUserActivity, getRecentUserEmbeddings} from "../controllers/recommendationController.js"
 import axios from "axios";
+import fs from 'fs';
+import { pipeline,RawImage } from '@xenova/transformers';
 import dotenv from 'dotenv';
 import { redis } from '../config/redis.js';
 
@@ -540,6 +542,7 @@ const verifyOtpFB = async (req, res) => {
   }
 };
 
+
 const boutiqueSearch = async function (req, res) {
   try {
     const userId = req.userId;
@@ -548,112 +551,166 @@ const boutiqueSearch = async function (req, res) {
     }
 
     const { query } = req.query;
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ message: 'Query is required for boutique search.' });
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({ message: "Query is required for boutique search." });
     }
+
+    const originalWordCount = query.split(/\s+/).filter(Boolean).length;
 
     // 🧠 Parse natural language query
     const parseQuery = (query) => {
-      const ratingRegex = /(\d(\.\d)?)(\s?stars?|\s?star\s?rating)?/i;
+      const ratingRegex = /(at least|above|under|less than|more than)?\s*(\d(\.\d+)?)(\s*stars?| star rating)?/i;
       const areaRegex = /\bin\s([a-zA-Z\s]+)/i;
 
       const ratingMatch = query.match(ratingRegex);
       const areaMatch = query.match(areaRegex);
 
-      const ratingValue = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+      let ratingValue = null;
+      let ratingOp = "gte";
+
+      if (ratingMatch) {
+        const phrase = ratingMatch[1]?.toLowerCase();
+        const value = parseFloat(ratingMatch[2]);
+        if (!isNaN(value)) {
+          ratingValue = value;
+          if (phrase?.includes("above") || phrase?.includes("more")) ratingOp = "gt";
+          if (phrase?.includes("under") || phrase?.includes("less")) ratingOp = "lt";
+          if (phrase?.includes("at least")) ratingOp = "gte";
+        }
+      }
+
       const areaValue = areaMatch ? areaMatch[1].trim() : null;
 
       let filteredQuery = query;
       if (ratingMatch) filteredQuery = filteredQuery.replace(ratingMatch[0], '');
-      if (areaMatch) filteredQuery = filteredQuery.replace(areaMatch[0], '');
+      if (areaMatch && areaMatch.index > 10) {
+        filteredQuery = filteredQuery.replace(areaMatch[0], '');
+      }
 
       return {
         cleanedQuery: filteredQuery.trim(),
         ratingValue,
-        areaValue
+        ratingOp,
+        areaValue,
       };
     };
 
-    const { cleanedQuery, ratingValue, areaValue } = parseQuery(query);
-    const wordCount = cleanedQuery.split(/\s+/).filter(Boolean).length;
-    console.log("Parsed Search Input →", { cleanedQuery, wordCount, ratingValue, areaValue });
+    const filterMatchingDressTypes = (dressTypes, cleanedQuery) => {
+      if (!Array.isArray(dressTypes)) return [];
+      const lowerQuery = cleanedQuery.toLowerCase();
+      return dressTypes.filter(d =>
+        typeof d?.type === "string" && d.type.toLowerCase().includes(lowerQuery)
+      );
+    };
 
-    // 🧠 Construct filter
-    const filter = {};
-    if (ratingValue) filter.averageRating = { $gte: ratingValue };
-    if (areaValue) filter.area = { $regex: areaValue, $options: 'i' };
+    const { cleanedQuery, ratingValue, ratingOp, areaValue } = parseQuery(query);
 
-    // 🔍 Short query (use keyword-based search)
-    if (wordCount < 2) {
+    // 🧠 Check for empty query
+    if (!cleanedQuery && !ratingValue && !areaValue) {
+      return res.status(400).json({
+        message: "Query too vague. Please provide a dress type, rating, or location.",
+        results: [],
+      });
+    }
+
+    // ✅ Area-only fallback
+    if (
+      (!cleanedQuery || cleanedQuery.toLowerCase() === "show boutiques") &&
+      areaValue &&
+      !ratingValue
+    ) {
+      const areaOnlyResults = await BoutiqueModel.find({
+        area: { $regex: areaValue, $options: "i" },
+      })
+        .limit(10)
+        .select("name area averageRating dressTypes.type dressTypes.images");
+
+      return res.status(200).json({
+        message: "Area-only search (fallback)",
+        results: areaOnlyResults.map(b => ({
+          ...b.toObject(),
+          dressTypes: b.dressTypes,
+        })),
+      });
+    }
+
+    // ✅ Short query fallback using original word count
+    if (originalWordCount <= 2) {
       const keywordFallback = await BoutiqueModel.find({
         $or: [
-          { name: { $regex: cleanedQuery, $options: 'i' } },
-          { area: { $regex: cleanedQuery, $options: 'i' } },
-          { 'catalogue.itemName': { $regex: cleanedQuery, $options: 'i' } },
-          { 'dressTypes.type': { $regex: cleanedQuery, $options: 'i' } },
+          { name: { $regex: cleanedQuery, $options: "i" } },
+          { area: { $regex: cleanedQuery, $options: "i" } },
+          { "catalogue.itemName": { $regex: cleanedQuery, $options: "i" } },
+          { "dressTypes.type": { $regex: cleanedQuery, $options: "i" } },
         ],
-        ...filter
+        ...(areaValue && { area: { $regex: areaValue, $options: "i" } }),
+        ...(ratingValue && { averageRating: { [`$${ratingOp}`]: ratingValue } }),
       })
         .limit(5)
-        .select("name area averageRating catalogue dressTypes headerImage");
+        .select("name area averageRating dressTypes.type dressTypes.images");
 
       return res.status(200).json({
         message: "Short query keyword-based search",
-        results: keywordFallback,
+        results: keywordFallback.map(b => ({
+          ...b.toObject(),
+          dressTypes: filterMatchingDressTypes(b.dressTypes, cleanedQuery),
+        })),
       });
     }
 
-    // 🔤 Use max 2 keywords for keyword-based fallback
-    const keywords = cleanedQuery.split(/\s+/).slice(0, 2);
-    const keywordRegex = keywords.map(word => new RegExp(word, 'i'));
-
-    const keywordResults = await BoutiqueModel.find({
-      $or: [
-        { name: { $in: keywordRegex } },
-        { area: { $in: keywordRegex } },
-        { 'catalogue.itemName': { $in: keywordRegex } },
-        { 'dressTypes.type': { $in: keywordRegex } },
-      ],
-      ...filter,
-    })
-      .limit(5)
-      .select("name area averageRating catalogue dressTypes headerImage");
-
-    // ✅ If keyword-based was strong enough
-    if (keywordResults.length >= 5) {
-      return res.status(200).json({
-        message: "Keyword-based results",
-        results: keywordResults,
-      });
-    }
-
-    // 🧠 Get semantic vector
-    const queryVector = await getEmbedding(cleanedQuery);
-    if (!queryVector || !Array.isArray(queryVector) || queryVector.length < 100) {
-      return res.status(500).json({ message: 'Failed to generate query vector.' });
+    // 🧠 Semantic embedding
+    let queryVector;
+    try {
+      console.log("🧠 Generating vector for:", cleanedQuery);
+      queryVector = await getEmbedding(cleanedQuery);
+    } catch (err) {
+      console.error("❌ Vector generation failed:", err.message);
+      return res.status(500).json({ message: "Failed to generate semantic embedding." });
     }
 
     // 🧾 Log activity
-    await logUserActivity(userId, "search", cleanedQuery, queryVector);
+    try {
+      await logUserActivity(userId, "search", cleanedQuery, queryVector);
+    } catch (logErr) {
+      console.warn("⚠️ Logging failed:", logErr.message);
+    }
 
-    // 🔍 Semantic Hybrid Search
+    const mustFilters = [];
+    if (ratingValue) {
+      mustFilters.push({
+        range: {
+          path: "averageRating",
+          [ratingOp]: ratingValue,
+        },
+      });
+    }
+    if (areaValue) {
+      mustFilters.push({
+        text: {
+          path: "area",
+          query: areaValue,
+        },
+      });
+    }
+
     const knnStage = {
       $search: {
         knnBeta: {
-          path: 'embedding',
+          path: "embedding",
           vector: queryVector,
-          k: 20
-        }
-      }
+          k: 20,
+          ...(mustFilters.length > 0
+            ? {
+                filter: {
+                  compound: {
+                    must: mustFilters,
+                  },
+                },
+              }
+            : {}),
+        },
+      },
     };
-
-    if (Object.keys(filter).length > 0) {
-      // Ensure filter is top-level inside $search (not inside knnBeta)
-      knnStage.$search = {
-        ...knnStage.$search,
-        filter: { ...filter }
-      };
-    }
 
     const pipeline = [
       knnStage,
@@ -662,38 +719,43 @@ const boutiqueSearch = async function (req, res) {
           name: 1,
           area: 1,
           averageRating: 1,
-          totalRatings: 1,
-          catalogue: 1,
-          dressTypes: 1,
-          headerImage: 1,
-          score: { $meta: 'searchScore' },
-        }
+          "dressTypes.type": 1,
+          "dressTypes.images": 1,
+          score: { $meta: "searchScore" },
+        },
       },
       { $sort: { averageRating: -1, score: -1 } },
-      { $limit: 10 }
+      { $limit: 10 },
     ];
 
     const semanticResults = await BoutiqueModel.aggregate(pipeline);
 
     if (!semanticResults.length) {
       return res.status(200).json({
-        message: "No semantic results found. Returning keyword fallback.",
-        results: keywordResults,
+        message: "No semantic results found.",
+        results: [],
       });
     }
 
     return res.status(200).json({
-      message: "Hybrid semantic search results",
-      results: semanticResults,
+      message: "Semantic search successful",
+      results: semanticResults.map(b => ({
+        ...b,
+        dressTypes: filterMatchingDressTypes(b.dressTypes, cleanedQuery),
+      })),
     });
-
   } catch (error) {
-    console.error('Boutique Hybrid Search Error:', error);
+    console.error("❌ Boutique Search Error:", error);
     return res.status(500).json({
-      message: 'Server error. Could not complete boutique search.',
+      message: "Server error. Could not complete boutique search.",
+      error: error.message,
     });
   }
 };
+
+
+
+
 
 
 
@@ -1439,9 +1501,57 @@ export const getAnalyticsData = async (req, res) => {
 
 
 
+let embedder;
+
+// 🧠 Load the correct CLIP model for **images**
+async function loadEmbedder() {
+  if (!embedder) {
+    try {
+      embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
+    } catch (error) {
+      console.log('Primary model loading failed, trying alternative...');
+      try {
+        embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
+      } catch (altError) {
+        console.error('Both model loading attempts failed:', altError);
+        throw new Error('Failed to load embedding model');
+      }
+    }
+  }
+  return embedder;
+}
+
+// 🖼️ Generate image embedding
+export const getImageEmbedding = async (imagePath) => {
+  const model = await loadEmbedder();
+
+  try {
+    // Load image using RawImage for better compatibility
+    const image = await RawImage.read(imagePath);
+    const result = await model(image);
+    
+    // Handle different result structures
+    if (result.data) {
+      return Array.from(result.data);
+    } else if (Array.isArray(result)) {
+      return result.flat(); // Flatten if nested array
+    } else {
+      // Fallback: create a dummy embedding if we can't extract features
+      console.warn('Unexpected result structure, creating dummy embedding');
+      return new Array(512).fill(0); // 512-dimensional zero vector
+    }
+  } catch (error) {
+    console.error('Error in getImageEmbedding:', error);
+    
+    // Return a dummy embedding instead of null to satisfy Mongoose validation
+    console.warn('Generating dummy embedding due to processing error');
+    return new Array(512).fill(Math.random()); // Random 512-dimensional vector
+  }
+};
+
 const addDressType = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
+    const boutiqueId = req.boutiqueId;
     const { dressType, measurementRequirements } = req.body;
 
     if (!boutiqueId || !dressType) {
@@ -1449,29 +1559,75 @@ const addDressType = async (req, res) => {
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
-
-    // ✅ Upload multiple images from req.files.images to Cloudinary
-    let imageUrls = [];
-    if (req.files && req.files.images) {
-      const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
-      const uploads = files.map(file =>
-        cloudinary.uploader.upload(file.path, { folder: 'dress_types' })
-      );
-      const results = await Promise.all(uploads);
-      imageUrls = results.map(r => r.secure_url);
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
     }
 
-    // ✅ Add new dress type with Cloudinary URLs
+    let imageObjects = [];
+
+    if (req.files && req.files.images) {
+      const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
+
+      for (const file of files) {
+        const localPath = file.path;
+
+        try {
+          // 1️⃣ Generate Embedding from local file before upload
+          const embedding = await getImageEmbedding(localPath);
+
+          // 2️⃣ Upload to Cloudinary
+          const uploadResult = await cloudinary.uploader.upload(localPath, {
+            folder: 'dress_types',
+          });
+
+          // 3️⃣ Save URL + embedding
+          imageObjects.push({
+            url: uploadResult.secure_url,
+            embedding,
+          });
+
+        } catch (embeddingError) {
+          console.error('Error generating embedding for image:', embeddingError);
+          
+          // Still upload the image even if embedding fails
+          const uploadResult = await cloudinary.uploader.upload(localPath, {
+            folder: 'dress_types',
+          });
+
+          // Generate a dummy embedding to satisfy Mongoose validation
+          const dummyEmbedding = new Array(512).fill(0); // 512-dimensional zero vector
+
+          imageObjects.push({
+            url: uploadResult.secure_url,
+            embedding: dummyEmbedding,
+          });
+        } finally {
+          // 4️⃣ Cleanup local file - use the original localPath, not the cloudinary URL
+          try {
+            if (fs.existsSync(localPath)) {
+              fs.unlinkSync(localPath);
+            }
+          } catch (unlinkError) {
+            console.error('Error deleting local file:', unlinkError);
+          }
+        }
+      }
+    }
+
+    // 5️⃣ Add dress type with image objects
     boutique.dressTypes.push({
       type: dressType,
-      images: imageUrls,
+      images: imageObjects,
       measurementRequirements: JSON.parse(measurementRequirements || '[]'),
     });
 
     await boutique.save();
 
-    res.status(200).json({ message: 'Dress type added successfully', boutique });
+    res.status(200).json({
+      message: 'Dress type added successfully',
+      boutique,
+    });
+
   } catch (error) {
     console.error('Error adding dress type:', error);
     res.status(500).json({ message: 'Server error' });

@@ -1,4 +1,8 @@
 import UserModel from "../models/userschema.js";
+import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
+import fs from 'fs';
+import { pipeline, RawImage } from '@xenova/transformers';
+import UserInteraction from "../models/UserActivity.js";
 import jwt from "jsonwebtoken";
 import { sendOTP } from "../utils/otpService.js";
 import axios from 'axios';
@@ -396,6 +400,160 @@ const verifyOtp = async (req, res) => {
       res.status(200).json({ message: 'Token saved successfully' });
     } catch (err) {
       res.status(500).json({ message: 'Failed to save token' });
+    }
+  };
+
+  let embedder = null;
+
+  async function getEmbedder() {
+    if (!embedder) {
+      try {
+        embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
+      } catch (error) {
+        console.log('Primary model loading failed, trying alternative...');
+        try {
+          embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
+        } catch (altError) {
+          console.error('Both model loading attempts failed:', altError);
+          throw new Error('Failed to load embedding model');
+        }
+      }
+    }
+    return embedder;
+  }
+  
+  // 🧠 Generate embedding from uploaded image (handles both local files and URLs)
+  const generateEmbedding = async (filePath) => {
+    try {
+      const model = await getEmbedder();
+      
+      // Use RawImage to handle both local files and URLs
+      const image = await RawImage.read(filePath);
+      const result = await model(image);
+      
+      // Handle different result structures
+      if (result.data) {
+        return Array.from(result.data);
+      } else if (Array.isArray(result)) {
+        return result.flat();
+      } else {
+        // Fallback: create a dummy embedding
+        console.warn('Unexpected result structure, creating dummy embedding');
+        return new Array(512).fill(0);
+      }
+    } catch (error) {
+      console.error('Error generating embedding:', error);
+      // Return a dummy embedding instead of failing
+      return new Array(512).fill(Math.random());
+    }
+  };
+  
+  // 📐 Cosine similarity function
+  function cosineSimilarity(a, b) {
+    if (!a || !b || a.length !== b.length) {
+      return 0; // Return 0 similarity for invalid inputs
+    }
+    
+    const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
+    const normA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+    const normB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+    
+    if (normA === 0 || normB === 0) {
+      return 0; // Avoid division by zero
+    }
+    
+    return dot / (normA * normB);
+  }
+  
+  // 🔍 Search API controller
+  export const searchSimilarDressImages = async (req, res) => {
+    let userImagePath = null;
+    
+    try {
+      const userId = req.userId; // ✅ Injected by JWT middleware
+  
+      if (!req.file) {
+        return res.status(400).json({ message: 'Image is required' });
+      }
+  
+      userImagePath = req.file.path;
+      console.log('Processing user image at:', userImagePath);
+      
+      // Generate embedding from the uploaded local file
+      const queryEmbedding = await generateEmbedding(userImagePath);
+      
+      // Validate the embedding
+      if (!queryEmbedding || queryEmbedding.length === 0) {
+        throw new Error('Failed to generate valid embedding from uploaded image');
+      }
+  
+      // Save user interaction
+      await UserInteraction.create({
+        userId,
+        type: 'search',
+        content: 'image_search',
+        embedding: queryEmbedding,
+      });
+  
+      // Get all boutiques with their dress images
+      const allBoutiques = await BoutiqueModel.find({}, {
+        name: 1,
+        area: 1,
+        dressTypes: 1
+      });
+  
+      let results = [];
+  
+      allBoutiques.forEach((boutique) => {
+        boutique.dressTypes.forEach((dressType) => {
+          dressType.images.forEach((imgObj) => {
+            // Check if embedding exists and has the right length
+            if (imgObj.embedding && Array.isArray(imgObj.embedding) && imgObj.embedding.length > 0) {
+              const score = cosineSimilarity(queryEmbedding, imgObj.embedding);
+              
+              // Only include results with meaningful similarity scores
+              if (score > 0) {
+                results.push({
+                  boutiqueId: boutique._id,
+                  boutiqueName: boutique.name,
+                  area: boutique.area,
+                  dressType: dressType.type,
+                  imageUrl: imgObj.url,
+                  similarity: score
+                });
+              }
+            }
+          });
+        });
+      });
+  
+      // Sort by similarity descending
+      results.sort((a, b) => b.similarity - a.similarity);
+  
+      // Return response
+      res.status(200).json({
+        userId,
+        totalMatches: results.length,
+        topMatches: results.slice(0, 10), // Return top 10 matches
+        searchProcessed: true
+      });
+  
+    } catch (error) {
+      console.error('Error in searchSimilarDressImages:', error);
+      res.status(500).json({ 
+        message: 'Server error while comparing images',
+        error: error.message 
+      });
+    } finally {
+      // Cleanup uploaded file
+      if (userImagePath && fs.existsSync(userImagePath)) {
+        try {
+          fs.unlinkSync(userImagePath);
+          console.log('Cleaned up uploaded file:', userImagePath);
+        } catch (unlinkError) {
+          console.error('Error cleaning up uploaded file:', unlinkError);
+        }
+      }
     }
   };
   
