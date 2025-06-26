@@ -16,6 +16,7 @@ import fs from 'fs';
 import { pipeline,RawImage } from '@xenova/transformers';
 import dotenv from 'dotenv';
 import { redis } from '../config/redis.js';
+import bcrypt from 'bcrypt';
 
 const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
 
@@ -26,6 +27,7 @@ cloudinary.config({
   api_key:    process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
 const CreateBoutique = async function (req, res) {
   try {
     const {
@@ -50,6 +52,10 @@ const CreateBoutique = async function (req, res) {
       return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
+    // ✅ Hash the password before storing
+    const saltRounds = 12; // Higher is more secure but slower
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     // ✅ Parse fields
     const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
     const parsedDressTypes = typeof dressTypes === 'string' ? JSON.parse(dressTypes) : dressTypes;
@@ -65,12 +71,12 @@ const CreateBoutique = async function (req, res) {
       headerImageUrl = result.secure_url;
     }
 
-    // ✅ Create boutique
+    // ✅ Create boutique with hashed password
     const CreatedBoutique = await BoutiqueModel.create({
       adminId, // ✅ Inject adminId here
       name,
       email,
-      password,
+      password: hashedPassword, // ✅ Store hashed password, not plain text
       phone,
       location: parsedLocation,
       dressTypes: parsedDressTypes,
@@ -92,7 +98,11 @@ const CreateBoutique = async function (req, res) {
     CreatedBoutique.embedding = embedding;
     await CreatedBoutique.save();
 
-    return res.status(201).json(CreatedBoutique);
+    // ✅ Remove password from response for security
+    const responseData = CreatedBoutique.toObject();
+    delete responseData.password;
+
+    return res.status(201).json(responseData);
 
   } catch (error) {
     console.error("Error creating Boutique:", error);
@@ -104,7 +114,6 @@ const CreateBoutique = async function (req, res) {
     return res.status(500).send("An unexpected error occurred");
   }
 };
-
 
 export const updateBoutiqueEmbedding = async (boutiqueId) => {
   const boutique = await BoutiqueModel.findById(boutiqueId).lean();
@@ -381,7 +390,7 @@ const Boutiquelogin = async function (req, res) {
   try {
     const { name, password, phone } = req.body;
 
-    console.log("received credentials : ", req.body);
+    console.log("Login attempt for phone:", phone); // ✅ Don't log full credentials
 
     // Validate required fields
     if (!name || !password || !phone) {
@@ -394,9 +403,15 @@ const Boutiquelogin = async function (req, res) {
       return res.status(404).json({ message: "Boutique Account not found." });
     }
 
-    // Check if name and password match
-    if (Boutique.name !== name || Boutique.password !== password) {
-      return res.status(401).json({ message: "Invalid name or password." });
+    // ✅ Check name first (simple string comparison)
+    if (Boutique.name !== name) {
+      return res.status(401).json({ message: "Invalid credentials." });
+    }
+
+    // ✅ Use bcrypt to verify password against hashed version
+    const isValidPassword = await bcrypt.compare(password, Boutique.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: "Invalid credentials." });
     }
 
     // Generate a new OTP
@@ -416,7 +431,7 @@ const Boutiquelogin = async function (req, res) {
     //  return res.status(500).json({ message: "Failed to send OTP", error: result.error });
     //}
 
-    // Twilio logic removed — optionally log OTP for testing
+    // ⚠️ For development only - remove in production
     console.log(`Generated OTP for ${phone}: ${otp}`);
 
     // Respond with instruction to switch to OTP page
@@ -424,7 +439,8 @@ const Boutiquelogin = async function (req, res) {
       message: "OTP generated. Please verify to complete login.",
       switchToOTPPage: true,
       boutiqueUserId: Boutique._id,
-      otp, // ⚠️ Optional: remove this in production
+      // ⚠️ Remove OTP from response in production for security
+      ...(process.env.NODE_ENV === 'development' && { otp })
     });
   } catch (error) {
     console.error("Error during login:", error.message);

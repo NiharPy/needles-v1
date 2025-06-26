@@ -12,7 +12,9 @@ router.get("/", (req, res) => {
     res.send("Welcome to the Admin page!");
 });
 
-router.route('/register').post(registerAdmin);
+if (process.env.NODE_ENV === 'development') {
+    router.route('/register').post(registerAdmin);
+}
 
 router.route('/login').post(adminLogin);
 
