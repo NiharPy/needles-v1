@@ -9,7 +9,7 @@
     "test": "NODE_ENV=test NODE_OPTIONS='--experimental-vm-modules' jest --config jest.config.mjs --detectOpenHandles --forceExit",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
-    "prepare": "husky install"
+    "postinstall": "husky install"
   },
   "keywords": [],
   "author": "",
@@ -66,6 +66,7 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
+    "husky": "^9.1.7",
     "jest": "^30.0.3",
     "nodemon": "^3.1.9",
     "supertest": "^7.1.1"
