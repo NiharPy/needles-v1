@@ -8,6 +8,9 @@ import BoutiquesRouter from "./APIroutes/BoutiquesRouter.js";
 import { config } from './config/config.js';
 import http from 'http';
 import './utils/orderCleanupJob.js'; // 🧠 This will start the cron job
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
+import xss from 'xss-clean';
 
 
 dotenv.config();
@@ -19,6 +22,10 @@ const server = http.createServer(app);
 // === Middleware ===
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(helmet());
+app.use(mongoSanitize());
+app.use(xss());
+app.disable('x-powered-by');
 
 // --- FIXED CORS ---
 app.use(cors({
@@ -55,5 +62,9 @@ app.listen(port, () => {
 });
 
 // === Log Environment Info ===
-console.log(`Database URI: ${config.DB_URI}`);
+console.log(`Database connected successfully.`);
+
+
+export default app;
+
 
