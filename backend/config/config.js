@@ -16,16 +16,22 @@ export const configMap = {
     PORT: process.env.PORT || 3000,
     DB_URI: process.env.DB_URI,
     LOG_LEVEL: process.env.LOG_LEVEL || 'debug',
+    QDRANT_URL: process.env.QDRANT_URL,
+    QDRANT_API_KEY: process.env.QDRANT_API_KEY || null,
   },
   production: {
     PORT: process.env.PORT || 8080,
     DB_URI: process.env.DB_URI,
     LOG_LEVEL: process.env.LOG_LEVEL || 'error',
+    QDRANT_URL: process.env.QDRANT_URL,
+    QDRANT_API_KEY: process.env.QDRANT_API_KEY,
   },
   test: {
     PORT: process.env.PORT || 3001,
     DB_URI: process.env.DB_URI,
     LOG_LEVEL: 'silent',
+    QDRANT_URL: process.env.QDRANT_URL,
+    QDRANT_API_KEY: process.env.QDRANT_API_KEY || null,
   },
 };
 

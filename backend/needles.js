@@ -11,6 +11,7 @@ import './utils/orderCleanupJob.js'; // 🧠 This will start the cron job
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
 import xss from 'xss-clean';
+import { connectQdrant } from './config/qdrant.js';
 
 
 dotenv.config();
@@ -44,8 +45,30 @@ app.use((req, res, next) => {
     next();
   });
 
-// === Database Connection ===
-connectDB();
+// === Initialize connections ===
+const initializeServices = async () => {
+  try {
+    // Connect to MongoDB
+    await connectDB();
+    console.log(`✅ Database connected successfully.`);
+    
+    // Connect to Qdrant (with error handling)
+    try {
+      await connectQdrant();
+      console.log(`✅ Qdrant connected successfully.`);
+    } catch (qdrantError) {
+      console.warn(`⚠️ Qdrant connection failed: ${qdrantError.message}`);
+      console.warn(`⚠️ Image embedding features will be disabled`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize services:', error);
+    process.exit(1);
+  }
+};
+
+// Initialize services
+initializeServices();
 
 // === Routes ===
 app.get("/", (req, res) => {
@@ -58,13 +81,7 @@ app.use("/User", UsersRouter);
 
 // === Server Start ===
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`🚀 Server is running on port ${port}`);
 });
 
-// === Log Environment Info ===
-console.log(`Database connected successfully.`);
-
-
 export default app;
-
-

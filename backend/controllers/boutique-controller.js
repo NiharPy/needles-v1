@@ -17,6 +17,8 @@ import { pipeline,RawImage } from '@xenova/transformers';
 import dotenv from 'dotenv';
 import { redis } from '../config/redis.js';
 import bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
+import { storeImageEmbedding } from '../utils/qdrantClient.js';
 
 const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
 
@@ -1519,13 +1521,12 @@ export const getAnalyticsData = async (req, res) => {
 
 let embedder;
 
-// 🧠 Load the correct CLIP model for **images**
 async function loadEmbedder() {
   if (!embedder) {
     try {
       embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
     } catch (error) {
-      console.log('Primary model loading failed, trying alternative...');
+      console.log('Primary model loading failed, trying fallback...');
       try {
         embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
       } catch (altError) {
@@ -1537,115 +1538,96 @@ async function loadEmbedder() {
   return embedder;
 }
 
-// 🖼️ Generate image embedding
 export const getImageEmbedding = async (imagePath) => {
   const model = await loadEmbedder();
-
   try {
-    // Load image using RawImage for better compatibility
     const image = await RawImage.read(imagePath);
     const result = await model(image);
-    
-    // Handle different result structures
-    if (result.data) {
-      return Array.from(result.data);
-    } else if (Array.isArray(result)) {
-      return result.flat(); // Flatten if nested array
-    } else {
-      // Fallback: create a dummy embedding if we can't extract features
-      console.warn('Unexpected result structure, creating dummy embedding');
-      return new Array(512).fill(0); // 512-dimensional zero vector
-    }
+    if (result.data) return Array.from(result.data);
+    if (Array.isArray(result)) return result.flat();
+    return new Array(512).fill(0);
   } catch (error) {
-    console.error('Error in getImageEmbedding:', error);
-    
-    // Return a dummy embedding instead of null to satisfy Mongoose validation
-    console.warn('Generating dummy embedding due to processing error');
-    return new Array(512).fill(Math.random()); // Random 512-dimensional vector
+    console.error('Embedding error:', error);
+    return new Array(512).fill(Math.random());
   }
 };
 
 const addDressType = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
-    const { dressType, measurementRequirements } = req.body;
+    const { dressType, measurementRequirements, sizeChart } = req.body;
 
     if (!boutiqueId || !dressType) {
       return res.status(400).json({ message: 'boutiqueId and dressType are required' });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) {
-      return res.status(404).json({ message: 'Boutique not found' });
-    }
+    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
 
-    let imageObjects = [];
+    const imageObjects = [];
 
-    if (req.files && req.files.images) {
+    if (req.files?.images) {
       const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
 
       for (const file of files) {
         const localPath = file.path;
 
         try {
-          // 1️⃣ Generate Embedding from local file before upload
           const embedding = await getImageEmbedding(localPath);
+          const uploadResult = await cloudinary.uploader.upload(localPath, { folder: 'dress_types' });
 
-          // 2️⃣ Upload to Cloudinary
-          const uploadResult = await cloudinary.uploader.upload(localPath, {
-            folder: 'dress_types',
+          const qdrantId = await storeImageEmbedding(embedding, {
+            boutiqueId,
+            dressType,
+            imageUrl: uploadResult.secure_url,
           });
-
-          // 3️⃣ Save URL + embedding
-          imageObjects.push({
-            url: uploadResult.secure_url,
-            embedding,
-          });
-
-        } catch (embeddingError) {
-          console.error('Error generating embedding for image:', embeddingError);
-          
-          // Still upload the image even if embedding fails
-          const uploadResult = await cloudinary.uploader.upload(localPath, {
-            folder: 'dress_types',
-          });
-
-          // Generate a dummy embedding to satisfy Mongoose validation
-          const dummyEmbedding = new Array(512).fill(0); // 512-dimensional zero vector
 
           imageObjects.push({
             url: uploadResult.secure_url,
-            embedding: dummyEmbedding,
+            qdrantId,
+          });
+
+        } catch (err) {
+          console.error('Embedding/Qdrant error:', err);
+
+          const uploadResult = await cloudinary.uploader.upload(localPath, { folder: 'dress_types' });
+
+          imageObjects.push({
+            url: uploadResult.secure_url,
+            qdrantId: 'embedding-failed-' + uuidv4(),
           });
         } finally {
-          // 4️⃣ Cleanup local file - use the original localPath, not the cloudinary URL
-          try {
-            if (fs.existsSync(localPath)) {
-              fs.unlinkSync(localPath);
-            }
-          } catch (unlinkError) {
-            console.error('Error deleting local file:', unlinkError);
-          }
+          if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
         }
       }
     }
 
-    // 5️⃣ Add dress type with image objects
+    const parsedMeasurements = JSON.parse(measurementRequirements || '[]');
+    const parsedSizeChart = JSON.parse(sizeChart || '{}');
+
+    const expectedSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+    const isValid = expectedSizes.every(size =>
+      parsedSizeChart[size] &&
+      parsedMeasurements.every(m => parsedSizeChart[size][m] !== undefined)
+    );
+
+    if (!isValid) {
+      return res.status(400).json({ message: 'Size chart is incomplete or mismatched.' });
+    }
+
     boutique.dressTypes.push({
       type: dressType,
       images: imageObjects,
-      measurementRequirements: JSON.parse(measurementRequirements || '[]'),
+      measurementRequirements: parsedMeasurements,
+      sizeChart: parsedSizeChart,
     });
 
     await boutique.save();
 
-    res.status(200).json({
-      message: 'Dress type added successfully',
-      boutique,
-    });
+    res.status(200).json({ message: 'Dress type added successfully', boutique });
 
   } catch (error) {
-    console.error('Error adding dress type:', error);
+    console.error('❌ Error adding dress type:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

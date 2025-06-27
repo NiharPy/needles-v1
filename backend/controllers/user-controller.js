@@ -1,6 +1,7 @@
 import UserModel from "../models/userschema.js";
 import BoutiqueModel from "../models/BoutiqueMarketSchema.js";
 import fs from 'fs';
+import fetch from 'node-fetch';
 import sharp from 'sharp';
 import { pipeline, RawImage } from '@xenova/transformers';
 import UserInteraction from "../models/UserActivity.js";
@@ -11,6 +12,7 @@ import mongoose from "mongoose";
 import BlacklistedToken from '../models/BlacklistedToken.js';
 import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 import { predefinedHyderabadAreas } from '../constants/areas.js';
+import { getQdrantClient } from '../config/qdrant.js';
 
 const OTP_EXPIRATION_TIME = 5
 
@@ -406,158 +408,176 @@ const verifyOtp = async (req, res) => {
 
   let embedder = null;
 
-  // 📦 Load once
   async function getEmbedder() {
     if (!embedder) {
-      try {
-        embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
-      } catch (err) {
-        console.warn('Fallback to zero-shot-image-classification');
-        embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-      }
+      // Use 'image-feature-extraction' for vision models, not 'feature-extraction'
+      embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
     }
     return embedder;
   }
   
-  // 🧠 Resize + Embed image (local only)
-  export const generateEmbedding = async (filePath) => {
+  export const generateEmbedding = async (imagePathOrUrl) => {
     try {
       const model = await getEmbedder();
-  
-      // ✅ Resize uploaded image to 224x224 and convert to JPEG
-      const resizedBuffer = await sharp(filePath)
-        .resize(224, 224, { fit: 'cover' }) // Important for CLIP
-        .jpeg({ quality: 80 })              // Reduces memory, doesn't harm quality
-        .toBuffer();
-  
-      const image = await RawImage.read(resizedBuffer);
+      
+      // Let RawImage handle the image loading and preprocessing
+      const image = await RawImage.read(imagePathOrUrl);
+      
+      // Generate embedding using the image pipeline
       const result = await model(image);
-  
-      if (result?.data) {
-        return Array.from(result.data);
+      
+      // Extract embedding data - for CLIP vision models, it's usually in result directly
+      let embeddings;
+      if (result && result.length > 0 && result[0].data) {
+        embeddings = result[0].data;
+      } else if (result && result.data) {
+        embeddings = result.data;
       } else if (Array.isArray(result)) {
-        return result.flat();
+        embeddings = result.flat();
       } else {
-        console.warn('Unexpected embedding result. Returning dummy.');
-        return new Array(512).fill(0);
+        embeddings = result;
       }
+      
+      if (!embeddings || embeddings.length === 0) {
+        throw new Error('No embedding data returned from model');
+      }
+      
+      // Convert to array if needed
+      const flat = Array.isArray(embeddings) ? embeddings : Array.from(embeddings);
+      
+      // Normalize the embedding
+      const norm = Math.sqrt(flat.reduce((sum, val) => sum + val * val, 0)) || 1;
+      return flat.map(x => x / norm);
+  
     } catch (err) {
-      console.error('Embedding error:', err);
-      return new Array(512).fill(Math.random()); // Avoid complete failure
+      console.error('❌ Embedding failed:', err.message);
+      throw new Error(`Embedding failed: ${err.message}`);
     }
   };
   
-  // 📐 Cosine similarity function
-  function cosineSimilarity(a, b) {
-    if (!a || !b || a.length !== b.length) {
-      return 0; // Return 0 similarity for invalid inputs
-    }
-    
-    const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const normA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-    const normB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
-    
-    if (normA === 0 || normB === 0) {
-      return 0; // Avoid division by zero
-    }
-    
-    return dot / (normA * normB);
-  }
-  
-  // 🔍 Search API controller
-  export const searchSimilarDressImages = async (req, res) => {
-    let userImagePath = null;
-    
+  // Alternative approach with manual preprocessing if needed
+  export const generateEmbeddingManual = async (imagePathOrUrl) => {
     try {
-      const userId = req.userId; // ✅ Injected by JWT middleware
+      const model = await getEmbedder();
+      let imageBuffer;
+  
+      // Load image
+      if (imagePathOrUrl.startsWith('http://') || imagePathOrUrl.startsWith('https://')) {
+        const response = await fetch(imagePathOrUrl);
+        if (!response.ok) throw new Error('Failed to fetch image from URL');
+        imageBuffer = Buffer.from(await response.arrayBuffer());
+      } else {
+        if (!fs.existsSync(imagePathOrUrl)) throw new Error('Local file not found');
+        imageBuffer = fs.readFileSync(imagePathOrUrl);
+      }
+  
+      // Process with Sharp and create RawImage
+      const { data, info } = await sharp(imageBuffer)
+        .resize(224, 224)
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+  
+      const image = new RawImage(new Uint8Array(data), info.width, info.height, info.channels);
+      
+      const result = await model(image);
+      
+      let embeddings;
+      if (result && result.length > 0 && result[0].data) {
+        embeddings = result[0].data;
+      } else if (result && result.data) {
+        embeddings = result.data;
+      } else {
+        embeddings = result;
+      }
+      
+      const flat = Array.isArray(embeddings) ? embeddings : Array.from(embeddings);
+      const norm = Math.sqrt(flat.reduce((sum, val) => sum + val * val, 0)) || 1;
+      return flat.map(x => x / norm);
+  
+    } catch (err) {
+      console.error('❌ Manual embedding failed:', err.message);
+      throw new Error(`Embedding failed: ${err.message}`);
+    }
+  };
+  
+  export const searchSimilarDressImages = async (req, res) => {
+    let imagePath = null;
+  
+    try {
+      const userId = req.userId;
   
       if (!req.file) {
         return res.status(400).json({ message: 'Image is required' });
       }
   
-      userImagePath = req.file.path;
-      console.log('Processing user image at:', userImagePath);
-      
-      // Generate embedding from the uploaded local file
-      const queryEmbedding = await generateEmbedding(userImagePath);
-      
-      // Validate the embedding
-      if (!queryEmbedding || queryEmbedding.length === 0) {
-        throw new Error('Failed to generate valid embedding from uploaded image');
-      }
+      imagePath = req.file.path;
   
-      // Save user interaction
+      // Step 1: Generate embedding
+      const embedding = await generateEmbedding(imagePath);
+  
+      // Step 2: Log search
       await UserInteraction.create({
         userId,
         type: 'search',
         content: 'image_search',
-        embedding: queryEmbedding,
+        embedding,
       });
   
-      // Get all boutiques with their dress images
-      const allBoutiques = await BoutiqueModel.find({}, {
-        name: 1,
-        area: 1,
-        dressTypes: 1
+      // Step 3: Qdrant vector search
+      const qdrant = await getQdrantClient();
+      const results = await qdrant.search('dress_types', {
+        vector: embedding,
+        limit: 10,
+        with_payload: true,
+        score_threshold: 0.25,
       });
   
-      let results = [];
-  
-      allBoutiques.forEach((boutique) => {
-        boutique.dressTypes.forEach((dressType) => {
-          dressType.images.forEach((imgObj) => {
-            // Check if embedding exists and has the right length
-            if (imgObj.embedding && Array.isArray(imgObj.embedding) && imgObj.embedding.length > 0) {
-              const score = cosineSimilarity(queryEmbedding, imgObj.embedding);
-              
-              // Only include results with meaningful similarity scores
-              if (score > 0) {
-                results.push({
-                  boutiqueId: boutique._id,
-                  boutiqueName: boutique.name,
-                  area: boutique.area,
-                  dressType: dressType.type,
-                  imageUrl: imgObj.url,
-                  similarity: score
-                });
-              }
-            }
-          });
+      if (!results || results.length === 0) {
+        return res.status(200).json({
+          message: 'No similar images found',
+          results: [],
         });
+      }
+  
+      // Step 4: Map boutique data
+      const boutiqueIds = [...new Set(results.map(r => r.payload.boutiqueId))];
+      const boutiques = await BoutiqueModel.find({ _id: { $in: boutiqueIds } });
+  
+      const boutiqueMap = new Map();
+      boutiques.forEach(b => boutiqueMap.set(String(b._id), b));
+  
+      const response = results.map(r => {
+        const b = boutiqueMap.get(r.payload.boutiqueId);
+        return {
+          boutiqueId: r.payload.boutiqueId,
+          boutiqueName: b?.name || 'Unknown',
+          area: b?.area || '',
+          dressType: r.payload.dressType,
+          imageUrl: r.payload.imageUrl,
+          similarity: r.score,
+        };
       });
   
-      // Sort by similarity descending
-      results.sort((a, b) => b.similarity - a.similarity);
-  
-      // Return response
       res.status(200).json({
-        userId,
-        totalMatches: results.length,
-        topMatches: results.slice(0, 10), // Return top 10 matches
-        searchProcessed: true
+        message: 'Search complete',
+        matches: response,
       });
   
-    } catch (error) {
-      console.error('Error in searchSimilarDressImages:', error);
-      res.status(500).json({ 
-        message: 'Server error while comparing images',
-        error: error.message 
+    } catch (err) {
+      console.error('❌ Error in image search:', err);
+      res.status(500).json({
+        message: 'Failed to search image',
+        error: err.message,
       });
     } finally {
-      // Cleanup uploaded file
-      if (userImagePath && fs.existsSync(userImagePath)) {
-        try {
-          fs.unlinkSync(userImagePath);
-          console.log('Cleaned up uploaded file:', userImagePath);
-        } catch (unlinkError) {
-          console.error('Error cleaning up uploaded file:', unlinkError);
-        }
+      if (imagePath && fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
       }
     }
   };
   
   
-
 export { updateUserLocation };
   
 export { registerUser, verifyOtp, Userlogin  };

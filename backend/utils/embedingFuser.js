@@ -6,7 +6,7 @@ export const getEmbedding = async (text) => {
       'https://api.openai.com/v1/embeddings',
       {
         input: text,
-        model: 'text-embedding-3-large',
+        model: 'text-embedding-3-small',
       },
       {
         headers: {

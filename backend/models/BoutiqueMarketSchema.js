@@ -77,13 +77,18 @@ const boutiqueSchema = new mongoose.Schema({
       images: [
         {
           url: { type: String, required: true },
-          embedding: {
-            type: [Number],
-            required: true, // or false if you plan to add them laters
-          }
+          qdrantId: { type: String, required: true },
         }
       ], // Image URLs for this dress type
-      measurementRequirements: [String], // e.g. ["Chest", "Waist", "Length"]
+      measurementRequirements: [String],// e.g. ["Chest", "Waist", "Length"]
+      sizeChart: {
+        XS: { type: Map, of: Number },
+        S:  { type: Map, of: Number },
+        M:  { type: Map, of: Number },
+        L:  { type: Map, of: Number },
+        XL: { type: Map, of: Number },
+        XXL:{ type: Map, of: Number },
+      }
     },
   ],
 
