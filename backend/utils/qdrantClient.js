@@ -9,14 +9,20 @@ import { v4 as uuidv4 } from 'uuid';
  */
 export const storeImageEmbedding = async (embedding, metadata = {}) => {
   try {
-    // Ensure qdrant client is available
     const qdrant = await getQdrantClient();
-    
     if (!qdrant) {
       throw new Error('Qdrant client is not available');
     }
 
     const vectorId = uuidv4();
+
+    const payload = {
+      boutiqueId: metadata.boutiqueId,
+      boutiqueName: metadata.boutiqueName || 'Unnamed Boutique',
+      area: metadata.area || 'Unknown Area',
+      dressType: metadata.dressType,
+      imageUrl: metadata.imageUrl,
+    };
 
     await qdrant.upsert('dress_types', {
       wait: true,
@@ -24,7 +30,7 @@ export const storeImageEmbedding = async (embedding, metadata = {}) => {
         {
           id: vectorId,
           vector: embedding,
-          payload: metadata,
+          payload,
         },
       ],
     });

@@ -76,82 +76,74 @@ export const generateEmbedding = async (imagePathOrUrl) => {
 };
 
 export const dressSearchWorker = new Worker(
-  'dressSearch',
-  async (job) => {
-    try {
-      const { imagePath, userId } = job.data;
-
-      if (!userId) {
-        throw new Error('userId is required but missing in job data');
-      }
-
-      const embedding = await generateEmbedding(imagePath);
-
+    'dressSearch',
+    async (job) => {
       try {
-        await UserInteraction.create({
-          userId,
-          type: 'search',
-          content: 'image_search',
-          embedding,
+        const { imagePath, userId } = job.data;
+  
+        if (!userId) {
+          throw new Error('userId is required but missing in job data');
+        }
+  
+        const embedding = await generateEmbedding(imagePath);
+  
+        try {
+          await UserInteraction.create({
+            userId,
+            type: 'search',
+            content: 'image_search',
+            embedding,
+          });
+        } catch (interactionErr) {
+          console.warn('⚠️ Could not save UserInteraction:', interactionErr.message);
+        }
+  
+        const qdrant = await getQdrantClient();
+        const results = await qdrant.search('dress_types', {
+          vector: embedding,
+          limit: 10,
+          with_payload: true,
+          score_threshold: 0.25,
         });
-      } catch (interactionErr) {
-        console.warn('⚠️ Could not save UserInteraction:', interactionErr.message);
-      }
-
-      const qdrant = await getQdrantClient();
-      const results = await qdrant.search('dress_types', {
-        vector: embedding,
-        limit: 10,
-        with_payload: true,
-        score_threshold: 0.25,
-      });
-
-      const boutiqueIds = [...new Set(results.map(r => String(r.payload.boutiqueId)))];
-      const objectIds = boutiqueIds.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
-
-      const boutiques = await BoutiqueModel.find({ _id: { $in: objectIds } }).select('name area').lean();
-
-      const boutiqueMap = new Map();
-      boutiques.forEach(b => boutiqueMap.set(String(b._id), b));
-
-      const response = results.map(result => {
-        const boutiqueId = String(result.payload.boutiqueId);
-        const boutique = boutiqueMap.get(boutiqueId);
-        return {
-          boutiqueId,
-          boutiqueName: boutique?.name || 'Boutique Not Found',
-          area: boutique?.area || 'Area Not Available',
-          dressType: result.payload.dressType || 'Unknown Type',
-          imageUrl: result.payload.imageUrl || '',
-          similarity: parseFloat((result.score || 0).toFixed(4)),
-          isAvailable: !!boutique
-        };
-      });
-
-      if (imagePath && fs.existsSync(imagePath)) {
-        try {
-          fs.unlinkSync(imagePath);
-        } catch (err) {
-          console.warn('⚠️ Could not clean up file:', err.message);
+  
+        const response = results.map(result => {
+          const payload = result.payload || {};
+          return {
+            boutiqueId: String(payload.boutiqueId || ''),
+            boutiqueName: payload.boutiqueName || 'Boutique Not Found',
+            area: payload.area || 'Area Not Available',
+            dressType: payload.dressType || 'Unknown Type',
+            imageUrl: payload.imageUrl || '',
+            similarity: parseFloat((result.score || 0).toFixed(4)),
+            isAvailable: !!(payload.boutiqueName && payload.area)
+          };
+        });
+  
+        if (imagePath && fs.existsSync(imagePath)) {
+          try {
+            fs.unlinkSync(imagePath);
+          } catch (err) {
+            console.warn('⚠️ Could not clean up file:', err.message);
+          }
         }
-      }
-
-      return response;
-
-    } catch (err) {
-      console.error('❌ Worker error:', err);
-      if (job.data.imagePath && fs.existsSync(job.data.imagePath)) {
-        try {
-          fs.unlinkSync(job.data.imagePath);
-        } catch (cleanupErr) {
-          console.warn('⚠️ Could not clean up file after error:', cleanupErr.message);
+  
+        return response;
+  
+      } catch (err) {
+        console.error('❌ Worker error:', err);
+        if (job.data.imagePath && fs.existsSync(job.data.imagePath)) {
+          try {
+            fs.unlinkSync(job.data.imagePath);
+          } catch (cleanupErr) {
+            console.warn('⚠️ Could not clean up file after error:', cleanupErr.message);
+          }
         }
+        throw new Error(`Embedding failed: ${err.message}`);
       }
-      throw new Error(`Embedding failed: ${err.message}`);
+    },
+    {
+      connection,
+      concurrency: 3,
     }
-  },
-  {
-    connection,
-    concurrency: 3,
-  }
-);
+  );
+  

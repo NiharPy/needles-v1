@@ -1578,6 +1578,8 @@ const addDressType = async (req, res) => {
 
           const qdrantId = await storeImageEmbedding(embedding, {
             boutiqueId,
+            boutiqueName: boutique.name,
+            area: boutique.area,
             dressType,
             imageUrl: uploadResult.secure_url,
           });
