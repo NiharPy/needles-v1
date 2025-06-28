@@ -28,9 +28,10 @@ const authMiddleware = async (req, res, next) => {
         message: err.name === "TokenExpiredError" ? "Access token expired." : "Invalid token."
       });
     }
-
+  
     req.user = decoded;
-    req.boutiqueId = decoded.userId; // 👈 Attach boutiqueId from JWT
+    req.userId = decoded.userId;     // ✅ This fixes the controller
+    req.boutiqueId = decoded.userId; // Optional, for internal use
     next();
   });
 };

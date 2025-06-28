@@ -19,6 +19,8 @@ import { redis } from '../config/redis.js';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { storeImageEmbedding } from '../utils/qdrantClient.js';
+import { addDressQueue } from '../queues/addDressQueue.js';
+
 
 const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
 
@@ -1518,121 +1520,35 @@ export const getAnalyticsData = async (req, res) => {
 
 
 
-
-let embedder;
-
-async function loadEmbedder() {
-  if (!embedder) {
-    try {
-      embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
-    } catch (error) {
-      console.log('Primary model loading failed, trying fallback...');
-      try {
-        embedder = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-      } catch (altError) {
-        console.error('Both model loading attempts failed:', altError);
-        throw new Error('Failed to load embedding model');
-      }
-    }
-  }
-  return embedder;
-}
-
-export const getImageEmbedding = async (imagePath) => {
-  const model = await loadEmbedder();
-  try {
-    const image = await RawImage.read(imagePath);
-    const result = await model(image);
-    if (result.data) return Array.from(result.data);
-    if (Array.isArray(result)) return result.flat();
-    return new Array(512).fill(0);
-  } catch (error) {
-    console.error('Embedding error:', error);
-    return new Array(512).fill(Math.random());
-  }
-};
-
 const addDressType = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId;
+    const boutiqueId = req.userId; // ✅ Comes from JWT via authMiddleware
+
+    if (!boutiqueId) {
+      return res.status(401).json({ message: "Unauthorized: No boutiqueId from token" });
+    }
+
     const { dressType, measurementRequirements, sizeChart } = req.body;
+    const files = req.files?.images || [];
 
-    if (!boutiqueId || !dressType) {
-      return res.status(400).json({ message: 'boutiqueId and dressType are required' });
-    }
+    const imagePaths = files.map((file) => file.path);
 
-    const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
-
-    const imageObjects = [];
-
-    if (req.files?.images) {
-      const files = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
-
-      for (const file of files) {
-        const localPath = file.path;
-
-        try {
-          const embedding = await getImageEmbedding(localPath);
-          const uploadResult = await cloudinary.uploader.upload(localPath, { folder: 'dress_types' });
-
-          const qdrantId = await storeImageEmbedding(embedding, {
-            boutiqueId,
-            boutiqueName: boutique.name,
-            area: boutique.area,
-            dressType,
-            imageUrl: uploadResult.secure_url,
-          });
-
-          imageObjects.push({
-            url: uploadResult.secure_url,
-            qdrantId,
-          });
-
-        } catch (err) {
-          console.error('Embedding/Qdrant error:', err);
-
-          const uploadResult = await cloudinary.uploader.upload(localPath, { folder: 'dress_types' });
-
-          imageObjects.push({
-            url: uploadResult.secure_url,
-            qdrantId: 'embedding-failed-' + uuidv4(),
-          });
-        } finally {
-          if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-        }
-      }
-    }
-
-    const parsedMeasurements = JSON.parse(measurementRequirements || '[]');
-    const parsedSizeChart = JSON.parse(sizeChart || '{}');
-
-    const expectedSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-    const isValid = expectedSizes.every(size =>
-      parsedSizeChart[size] &&
-      parsedMeasurements.every(m => parsedSizeChart[size][m] !== undefined)
-    );
-
-    if (!isValid) {
-      return res.status(400).json({ message: 'Size chart is incomplete or mismatched.' });
-    }
-
-    boutique.dressTypes.push({
-      type: dressType,
-      images: imageObjects,
-      measurementRequirements: parsedMeasurements,
-      sizeChart: parsedSizeChart,
+    await addDressQueue.add('process-dress-type', {
+      boutiqueId, // ✅ Now defined
+      dressType,
+      measurementRequirements,
+      sizeChart,
+      imagePaths,
     });
 
-    await boutique.save();
-
-    res.status(200).json({ message: 'Dress type added successfully', boutique });
-
+    res.status(200).json({ message: 'Dress type job enqueued successfully' });
   } catch (error) {
-    console.error('❌ Error adding dress type:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('❌ Error in addDressType controller:', error);
+    res.status(500).json({ message: 'Failed to enqueue dress type' });
   }
 };
+
+
 
 const deleteDressType = async (req, res) => {
   const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
