@@ -13,6 +13,7 @@ import BlacklistedToken from '../models/BlacklistedToken.js';
 import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 import { predefinedHyderabadAreas } from '../constants/areas.js';
 import { getQdrantClient } from '../config/qdrant.js';
+import { dressSearchQueue } from '../queues/dressSearchQueue.js';
 
 const OTP_EXPIRATION_TIME = 5
 
@@ -406,174 +407,75 @@ const verifyOtp = async (req, res) => {
     }
   };
 
-  let embedder = null;
+  export const uploadDressImageForSearch = async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Image is required' });
+    }
+  
+    const userId = req.userId;
+    const imagePath = req.file.path;
+  
+    try {
+      const job = await dressSearchQueue.add(
+        'search',
+        { userId, imagePath },
+        {
+          timeout: 12000,         // fails after 12s if not done
+          removeOnComplete: false,
+          removeOnFail: false,
+        }
+      );
+  
+      res.status(202).json({
+        message: 'Search queued successfully',
+        jobId: job.id,
+      });
+    } catch (err) {
+      console.error('❌ Failed to queue image search:', err);
+      res.status(500).json({
+        message: 'Failed to queue search job',
+        error: err.message,
+      });
+    }
+  };
 
-  async function getEmbedder() {
-    if (!embedder) {
-      // Use 'image-feature-extraction' for vision models, not 'feature-extraction'
-      embedder = await pipeline('image-feature-extraction', 'Xenova/clip-vit-base-patch32');
-    }
-    return embedder;
-  }
   
-  export const generateEmbedding = async (imagePathOrUrl) => {
-    try {
-      const model = await getEmbedder();
-      
-      // Let RawImage handle the image loading and preprocessing
-      const image = await RawImage.read(imagePathOrUrl);
-      
-      // Generate embedding using the image pipeline
-      const result = await model(image);
-      
-      // Extract embedding data - for CLIP vision models, it's usually in result directly
-      let embeddings;
-      if (result && result.length > 0 && result[0].data) {
-        embeddings = result[0].data;
-      } else if (result && result.data) {
-        embeddings = result.data;
-      } else if (Array.isArray(result)) {
-        embeddings = result.flat();
-      } else {
-        embeddings = result;
-      }
-      
-      if (!embeddings || embeddings.length === 0) {
-        throw new Error('No embedding data returned from model');
-      }
-      
-      // Convert to array if needed
-      const flat = Array.isArray(embeddings) ? embeddings : Array.from(embeddings);
-      
-      // Normalize the embedding
-      const norm = Math.sqrt(flat.reduce((sum, val) => sum + val * val, 0)) || 1;
-      return flat.map(x => x / norm);
-  
-    } catch (err) {
-      console.error('❌ Embedding failed:', err.message);
-      throw new Error(`Embedding failed: ${err.message}`);
-    }
-  };
-  
-  // Alternative approach with manual preprocessing if needed
-  export const generateEmbeddingManual = async (imagePathOrUrl) => {
-    try {
-      const model = await getEmbedder();
-      let imageBuffer;
-  
-      // Load image
-      if (imagePathOrUrl.startsWith('http://') || imagePathOrUrl.startsWith('https://')) {
-        const response = await fetch(imagePathOrUrl);
-        if (!response.ok) throw new Error('Failed to fetch image from URL');
-        imageBuffer = Buffer.from(await response.arrayBuffer());
-      } else {
-        if (!fs.existsSync(imagePathOrUrl)) throw new Error('Local file not found');
-        imageBuffer = fs.readFileSync(imagePathOrUrl);
-      }
-  
-      // Process with Sharp and create RawImage
-      const { data, info } = await sharp(imageBuffer)
-        .resize(224, 224)
-        .removeAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-  
-      const image = new RawImage(new Uint8Array(data), info.width, info.height, info.channels);
-      
-      const result = await model(image);
-      
-      let embeddings;
-      if (result && result.length > 0 && result[0].data) {
-        embeddings = result[0].data;
-      } else if (result && result.data) {
-        embeddings = result.data;
-      } else {
-        embeddings = result;
-      }
-      
-      const flat = Array.isArray(embeddings) ? embeddings : Array.from(embeddings);
-      const norm = Math.sqrt(flat.reduce((sum, val) => sum + val * val, 0)) || 1;
-      return flat.map(x => x / norm);
-  
-    } catch (err) {
-      console.error('❌ Manual embedding failed:', err.message);
-      throw new Error(`Embedding failed: ${err.message}`);
-    }
-  };
-  
-  export const searchSimilarDressImages = async (req, res) => {
-    let imagePath = null;
+  export const getDressSearchResult = async (req, res) => {
+    const jobId = req.params.jobId;
   
     try {
-      const userId = req.userId;
+      const job = await dressSearchQueue.getJob(jobId);
   
-      if (!req.file) {
-        return res.status(400).json({ message: 'Image is required' });
+      if (!job) {
+        return res.status(404).json({ message: 'Job not found' });
       }
   
-      imagePath = req.file.path;
+      const state = await job.getState();
   
-      // Step 1: Generate embedding
-      const embedding = await generateEmbedding(imagePath);
-  
-      // Step 2: Log search
-      await UserInteraction.create({
-        userId,
-        type: 'search',
-        content: 'image_search',
-        embedding,
-      });
-  
-      // Step 3: Qdrant vector search
-      const qdrant = await getQdrantClient();
-      const results = await qdrant.search('dress_types', {
-        vector: embedding,
-        limit: 10,
-        with_payload: true,
-        score_threshold: 0.25,
-      });
-  
-      if (!results || results.length === 0) {
+      if (state === 'completed') {
+        const result = await job.returnvalue;
         return res.status(200).json({
-          message: 'No similar images found',
-          results: [],
+          status: 'completed',
+          results: result,
+        });
+      } else if (state === 'failed') {
+        return res.status(500).json({
+          status: 'failed',
+          message: job.failedReason,
+        });
+      } else {
+        return res.status(202).json({
+          status: 'processing',
+          message: 'Still working on it. Please try again shortly.',
         });
       }
   
-      // Step 4: Map boutique data
-      const boutiqueIds = [...new Set(results.map(r => r.payload.boutiqueId))];
-      const boutiques = await BoutiqueModel.find({ _id: { $in: boutiqueIds } });
-  
-      const boutiqueMap = new Map();
-      boutiques.forEach(b => boutiqueMap.set(String(b._id), b));
-  
-      const response = results.map(r => {
-        const b = boutiqueMap.get(r.payload.boutiqueId);
-        return {
-          boutiqueId: r.payload.boutiqueId,
-          boutiqueName: b?.name || 'Unknown',
-          area: b?.area || '',
-          dressType: r.payload.dressType,
-          imageUrl: r.payload.imageUrl,
-          similarity: r.score,
-        };
-      });
-  
-      res.status(200).json({
-        message: 'Search complete',
-        matches: response,
-      });
-  
     } catch (err) {
-      console.error('❌ Error in image search:', err);
-      res.status(500).json({
-        message: 'Failed to search image',
+      console.error('❌ Error fetching job result:', err);
+      return res.status(500).json({
+        message: 'Something went wrong while fetching job status.',
         error: err.message,
       });
-    } finally {
-      if (imagePath && fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
     }
   };
   
