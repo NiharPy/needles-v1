@@ -106,7 +106,7 @@ export const dressSearchWorker = new Worker(
           vector: embedding,
           limit: 10,
           with_payload: true,
-          score_threshold: 0.85, // ✅ Updated here
+          score_threshold: 0.65, // ✅ Updated here
         });
   
         const response = results.map(result => {
@@ -147,9 +147,16 @@ export const dressSearchWorker = new Worker(
     {
       connection,
       concurrency: 3,
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: { age: 3600 },
+      },
+      limiter: {
+        max: 10000,
+        duration: 60000,
+      },
     }
   );
-  
   
   
 
@@ -286,29 +293,29 @@ export const addDressWorker = new Worker(
           sizeChart,
           imagePaths,
         } = job.data;
-    
+
         console.log('🧵 Received job for boutiqueId:', boutiqueId);
         console.log('📝 Job data:', { 
           dressType, 
           imageCount: imagePaths?.length,
           imagePaths: imagePaths 
         });
-    
+
         // Validate inputs
         if (!boutiqueId) {
-          throw new Error('boutiqueId is required');
+          throw new Error('❗ Missing required field: boutiqueId');
         }
-        
+
         if (!imagePaths || !Array.isArray(imagePaths) || imagePaths.length === 0) {
-          throw new Error('At least one image path is required');
+          throw new Error('❗ At least one image path must be provided');
         }
-    
+
         // ✅ Validate ID format
         if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
           console.error('❌ Invalid boutiqueId format:', boutiqueId);
           throw new Error('Invalid boutique ID');
         }
-    
+
         // ✅ Pull boutique from MongoDB
         const boutique = await BoutiqueModel.findById(boutiqueId).lean();
         if (!boutique) {
@@ -317,12 +324,12 @@ export const addDressWorker = new Worker(
           console.log('📋 Available Boutiques:', all.map(b => `${b.name} (${b._id})`));
           throw new Error('Boutique not found');
         }
-        
+
         console.log('✅ Found boutique:', boutique.name);
-    
+
         const parsedMeasurements = JSON.parse(measurementRequirements || '[]');
         const parsedSizeChart = JSON.parse(sizeChart || '{}');
-    
+
         // ✅ Validate size chart structure (skip if empty for now)
         if (Object.keys(parsedSizeChart).length > 0) {
           const expectedSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
@@ -330,32 +337,32 @@ export const addDressWorker = new Worker(
             parsedSizeChart[size] &&
             parsedMeasurements.every(m => parsedSizeChart[size][m] !== undefined)
           );
-    
+
           if (!isValid) {
             console.warn('⚠️ Size chart validation failed - continuing anyway');
             console.log('Expected sizes:', expectedSizes);
             console.log('Provided chart keys:', Object.keys(parsedSizeChart));
           }
         }
-    
+
         const imageObjects = [];
         let successfulImages = 0;
         let failedImages = 0;
-    
+
         // ✅ Process each image with detailed error tracking
         for (let i = 0; i < imagePaths.length; i++) {
           const imagePathOrUrl = imagePaths[i];
           console.log(`\n📸 Processing image ${i + 1}/${imagePaths.length}: ${imagePathOrUrl}`);
-          
+
           try {
             // Step 1: Generate embedding (works with both URLs and local files)
             console.log('🧠 Generating embedding...');
             const embedding = await getImageEmbedding(imagePathOrUrl);
             console.log(`✅ Embedding generated: ${embedding.length} dimensions`);
-            
+
             // Step 2: Determine final image URL
             let finalImageUrl;
-            
+
             if (isUrl(imagePathOrUrl)) {
               // If it's already a URL (like from Cloudinary), use it directly
               finalImageUrl = imagePathOrUrl;
@@ -371,7 +378,7 @@ export const addDressWorker = new Worker(
               finalImageUrl = uploadResult.secure_url;
               console.log(`✅ Cloudinary upload successful: ${finalImageUrl}`);
             }
-    
+
             // Step 3: Store in Qdrant
             console.log('🔗 Storing in Qdrant...');
             const qdrantId = await storeImageEmbedding(embedding, {
@@ -382,22 +389,21 @@ export const addDressWorker = new Worker(
               imageUrl: finalImageUrl,
             });
             console.log(`✅ Qdrant storage successful: ${qdrantId}`);
-    
+
             imageObjects.push({
               url: finalImageUrl,
               qdrantId,
             });
-            
+
             successfulImages++;
             console.log(`✅ Image ${i + 1} processed successfully`);
-            
+
           } catch (err) {
             failedImages++;
             console.error(`❌ Error processing image ${i + 1} (${imagePathOrUrl}):`);
             console.error(`   Error: ${err.message}`);
             console.error(`   Stack: ${err.stack}`);
-            
-            // Add failed entry for debugging (optional)
+
             imageObjects.push({
               url: '',
               qdrantId: 'embedding-failed-' + uuidv4(),
@@ -405,7 +411,6 @@ export const addDressWorker = new Worker(
               originalPath: imagePathOrUrl
             });
           } finally {
-            // Clean up local files only (not URLs)
             if (!isUrl(imagePathOrUrl) && fs.existsSync(imagePathOrUrl)) {
               try {
                 fs.unlinkSync(imagePathOrUrl);
@@ -416,18 +421,15 @@ export const addDressWorker = new Worker(
             }
           }
         }
-        
+
         console.log(`\n📊 Processing summary: ${successfulImages} successful, ${failedImages} failed`);
-        
-        // Only proceed if at least one image was processed successfully
+
         if (successfulImages === 0) {
           throw new Error(`All ${imagePaths.length} images failed to process`);
         }
-    
-        // Filter out failed images before saving (optional)
+
         const successfulImageObjects = imageObjects.filter(img => img.url !== '');
-        
-        // ✅ Push into boutique.dressTypes
+
         console.log('💾 Saving to database...');
         const updatedBoutique = await BoutiqueModel.findByIdAndUpdate(
           boutiqueId,
@@ -435,7 +437,7 @@ export const addDressWorker = new Worker(
             $push: {
               dressTypes: {
                 type: dressType,
-                images: successfulImageObjects, // Only save successful images
+                images: successfulImageObjects,
                 measurementRequirements: parsedMeasurements,
                 sizeChart: parsedSizeChart,
               },
@@ -443,11 +445,11 @@ export const addDressWorker = new Worker(
           },
           { new: true }
         );
-        
+
         if (!updatedBoutique) {
           throw new Error('Failed to update boutique');
         }
-    
+
         console.log('✅ Dress type successfully saved to boutique:', boutique.name);
         return {
           success: true,
@@ -458,7 +460,7 @@ export const addDressWorker = new Worker(
           imagesFailed: failedImages,
           totalImages: imagePaths.length
         };
-        
+
       } catch (error) {
         console.error('❌ Worker job failed:', error);
         throw error;
@@ -467,5 +469,13 @@ export const addDressWorker = new Worker(
     {
       connection,
       concurrency: 1,
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: { age: 3600 },
+      },
+      limiter: {
+        max: 10000,
+        duration: 60000,
+      },
     }
 );
