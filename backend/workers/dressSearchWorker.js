@@ -106,7 +106,7 @@ export const dressSearchWorker = new Worker(
           vector: embedding,
           limit: 10,
           with_payload: true,
-          score_threshold: 0.5, // ✅ Updated here
+          score_threshold: 0.7, // ✅ Updated here
         });
   
         const response = results.map(result => {
