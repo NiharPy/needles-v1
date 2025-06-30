@@ -20,6 +20,7 @@ import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { storeImageEmbedding } from '../utils/qdrantClient.js';
 import { addDressQueue } from '../queues/addDressQueue.js';
+import { getQdrantClient } from '../config/qdrant.js';
 
 
 const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
@@ -1551,20 +1552,40 @@ const addDressType = async (req, res) => {
 
 
 const deleteDressType = async (req, res) => {
-  const boutiqueId = req.boutiqueId; // ✅ Use decoded boutiqueId
+  const boutiqueId = req.boutiqueId; // ✅ Decoded from token
   const { dressType } = req.body;
 
   try {
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: 'Boutique not found' });
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
+    }
 
-    // Filter the dressTypes array to remove the specified dress type
+    // Find the dress type to be deleted
+    const targetDress = boutique.dressTypes.find(type => type.type === dressType);
+    if (!targetDress) {
+      return res.status(404).json({ message: 'Dress type not found in boutique' });
+    }
+
+    // ✅ Collect all qdrantIds from the images of that dress type
+    const qdrantIds = targetDress.images.map(img => img.qdrantId).filter(Boolean);
+    
+    // ✅ Delete vectors from Qdrant
+    if (qdrantIds.length > 0) {
+      const qdrant = await getQdrantClient();
+      await qdrant.delete('dress_types', {
+        points: qdrantIds,
+      });
+      console.log(`🧹 Deleted ${qdrantIds.length} vectors from Qdrant`);
+    }
+
+    // ✅ Remove dressType from boutique
     boutique.dressTypes = boutique.dressTypes.filter((type) => type.type !== dressType);
     await boutique.save();
 
-    res.status(200).json({ message: 'Dress type deleted successfully', boutique });
+    res.status(200).json({ message: 'Dress type and embeddings deleted successfully', boutique });
   } catch (error) {
-    console.error('Error deleting dress type:', error);
+    console.error('❌ Error deleting dress type:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
