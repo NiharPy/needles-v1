@@ -1,5 +1,5 @@
 import express from 'express';
-import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType, getTopRatedBoutiques} from '../controllers/boutique-controller.js';
+import { boutiquesData, boutiqueSearch, viewBoutiqueDetails, getRecommendedBoutiques, getRecommendedDressTypes, getDressTypeImages, getBoutiqueCatalogueFU, getDressTypesWithDetails, getTopRatedNearbyBoutiquesForDressType, getTopRatedBoutiques, getSizeChartForDressType} from '../controllers/boutique-controller.js';
 import { registerUser, verifyOtp, getAllBoutiqueAreas, Userlogin } from '../controllers/user-controller.js';
 import { placeOrder, getOrderDetails, rateOrder, getUserAlterationRequests, submitAlterationRequest, viewPaidOrders, viewPendingOrders ,viewBill, cancelOrder, rejectOrderBill, markBillAsPaid, getUserPendingOrders, getCompletedOrdersFU } from '../controllers/order-controller.js';
 import authMiddleware from '../utils/auth-user.js';
@@ -85,6 +85,8 @@ router.route('/:userId/alterations/submit').post(upload.fields([
 ]), submitAlterationRequest);
 
 router.route("/refresh-token").post(refreshAccessToken);
+
+router.get('/sizeChart', authMiddleware, getSizeChartForDressType);
 
 //router.route("/:userId/order/:orderId/pay").post(authMiddleware,processPayment);
 

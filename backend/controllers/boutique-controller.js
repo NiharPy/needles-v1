@@ -1801,6 +1801,54 @@ export const getBoutiqueAreas = async (req, res) => {
   }
 };
 
+
+export const getSizeChartForDressType = async (req, res) => {
+  try {
+    const userId = req.userId; // ✅ Extracted from JWT by authMiddleware
+    const { boutiqueId, dressType, selectedSize } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized. Token missing or invalid.' });
+    }
+
+    if (!boutiqueId || !dressType || !selectedSize) {
+      return res.status(400).json({
+        message: 'boutiqueId, dressType, and selectedSize are required',
+      });
+    }
+
+    const boutique = await BoutiqueModel.findById(boutiqueId).lean();
+    if (!boutique) {
+      return res.status(404).json({ message: 'Boutique not found' });
+    }
+
+    const dress = boutique.dressTypes.find(dt => dt.type === dressType);
+    if (!dress) {
+      return res.status(404).json({ message: 'Dress type not found in this boutique' });
+    }
+
+    const sizeChart = dress.sizeChart;
+    const sizeValues = sizeChart[selectedSize];
+
+    if (!sizeValues || typeof sizeValues !== 'object') {
+      return res.status(404).json({ message: `No values found for size '${selectedSize}'` });
+    }
+
+    // Convert Map to plain object (if needed)
+    const formattedValues = Object.fromEntries(Object.entries(sizeValues));
+
+    return res.status(200).json({
+      message: `Size chart for ${selectedSize} in ${dressType}`,
+      measurements: formattedValues,
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching size chart:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
 export {getOrdersByStatus};
 export {trackBusiness};
 
