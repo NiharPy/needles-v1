@@ -1,4 +1,5 @@
 // queues/dressSearchQueue.js
+// queues/addDressQueue.js
 import { Queue } from 'bullmq';
 import { createRedisConnection } from '../config/IOredis.js';
 
@@ -9,22 +10,26 @@ export const connection = createRedisConnection({
 export const addDressQueue = new Queue('addDressType', {
   connection,
   defaultJobOptions: {
-    removeOnComplete: 100, // ✅ Keep last 100 jobs only
-    removeOnFail: 50,      // ✅ Keep last 50 failed jobs
+    removeOnComplete: 100,          // ✅ Keep last 100 successful jobs
+    removeOnFail: { count: 50 },    // ✅ Keep last 50 failed jobs
   },
   limiter: {
-    max: 10000,             // ✅ Max jobs per interval (Upstash-friendly)
-    duration: 60 * 1000,    // ✅ Per minute
+    max: 10000,                     // ✅ Limit to avoid Upstash overuse
+    duration: 60000,                // ✅ Per minute
   },
 });
 
-// 🧹 Clean up old failed jobs (older than 1ms, max 1000 at once)
-(async () => {
+/**
+ * Cleans up old failed and completed jobs from the addDressQueue.
+ * Should be called manually or via cron for long-term hygiene.
+ */
+export async function cleanAddDressQueue() {
   try {
-    await addDressQueue.clean(0, 1000, 'failed');
-    await addDressQueue.clean(0, 1000, 'completed');
-    console.log('🧼 Cleaned up old BullMQ jobs');
+    const failed = await addDressQueue.clean(1000, 1000, 'failed');
+    const completed = await addDressQueue.clean(1000, 1000, 'completed');
+    console.log(`🧹 Cleaned ${failed.length} failed and ${completed.length} completed jobs from addDressQueue`);
   } catch (err) {
-    console.warn('⚠️ Could not clean queue:', err.message);
+    console.warn('⚠️ Could not clean addDressQueue:', err.message);
   }
-})();
+}
+
