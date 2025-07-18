@@ -21,6 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { storeImageEmbedding } from '../utils/qdrantClient.js';
 import { addDressQueue } from '../queues/addDressQueue.js';
 import { getQdrantClient } from '../config/qdrant.js';
+import logger from "../utils/logger.js";
 
 
 const ANALYTICS_BASE_URL = process.env.ANALYTICS_BASE_URL;
@@ -46,42 +47,40 @@ const CreateBoutique = async function (req, res) {
       area,
     } = req.body;
 
-    const adminId = req.adminId; // ✅ Injected from JWT
+    const adminId = req.adminId;
 
     if (!adminId) {
+      logger.warn("CreateBoutique: Missing adminId in request");
       return res.status(401).json({ message: "Admin ID missing from token" });
     }
 
-    // ✅ Validate required fields
     if (!name || !password || !email || !location || !phone || !dressTypes) {
+      logger.warn("CreateBoutique: Missing required fields", { body: req.body });
       return res.status(400).send("All fields (name, password, email, location, phone, dressTypes) are required");
     }
 
-    // ✅ Hash the password before storing
-    const saltRounds = 12; // Higher is more secure but slower
+    const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // ✅ Parse fields
     const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
     const parsedDressTypes = typeof dressTypes === 'string' ? JSON.parse(dressTypes) : dressTypes;
     const parsedCatalogue = catalogue && typeof catalogue === 'string' ? JSON.parse(catalogue) : [];
     const parsedArea = typeof area === 'string' ? area.trim() : area;
 
-    // ✅ Upload header image to Cloudinary (if present)
     let headerImageUrl = '';
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: 'boutique_headers',
       });
       headerImageUrl = result.secure_url;
+      logger.info("CreateBoutique: Uploaded header image to Cloudinary");
     }
 
-    // ✅ Create boutique with hashed password
     const CreatedBoutique = await BoutiqueModel.create({
-      adminId, // ✅ Inject adminId here
+      adminId,
       name,
       email,
-      password: hashedPassword, // ✅ Store hashed password, not plain text
+      password: hashedPassword,
       phone,
       location: parsedLocation,
       dressTypes: parsedDressTypes,
@@ -90,7 +89,8 @@ const CreateBoutique = async function (req, res) {
       area: parsedArea,
     });
 
-    // ✅ Generate embedding
+    logger.info("CreateBoutique: Boutique created in DB", { boutiqueId: CreatedBoutique._id });
+
     const combinedText = `
       Boutique name: ${name}
       Location: ${parsedLocation?.address || ''}
@@ -103,14 +103,15 @@ const CreateBoutique = async function (req, res) {
     CreatedBoutique.embedding = embedding;
     await CreatedBoutique.save();
 
-    // ✅ Remove password from response for security
+    logger.info("CreateBoutique: Embedding saved for boutique", { boutiqueId: CreatedBoutique._id });
+
     const responseData = CreatedBoutique.toObject();
     delete responseData.password;
 
     return res.status(201).json(responseData);
 
   } catch (error) {
-    console.error("Error creating Boutique:", error);
+    logger.error("CreateBoutique: Error occurred", { error: error.stack || error });
 
     if (error.name === 'ValidationError') {
       return res.status(422).json({ error: error.message, details: error.errors });
@@ -121,33 +122,48 @@ const CreateBoutique = async function (req, res) {
 };
 
 export const updateBoutiqueEmbedding = async (boutiqueId) => {
-  const boutique = await BoutiqueModel.findById(boutiqueId).lean();
-  if (!boutique) throw new Error("Boutique not found");
+  try {
+    logger.info("updateBoutiqueEmbedding: Started", { boutiqueId });
 
-  const combinedText = `
-    Boutique name: ${boutique.name}
-    Location: ${boutique.location?.address || ''}
-    Dress types: ${boutique.dressTypes?.join(', ') || ''}
-    Catalogue: ${boutique.catalogue?.join(', ') || ''}
-    Rating: ${boutique.rating || 'No rating yet'}
-  `;
+    const boutique = await BoutiqueModel.findById(boutiqueId).lean();
+    if (!boutique) {
+      logger.warn("updateBoutiqueEmbedding: Boutique not found", { boutiqueId });
+      throw new Error("Boutique not found");
+    }
 
-  const embedding = await getEmbedding(combinedText);
-  await BoutiqueModel.findByIdAndUpdate(boutiqueId, { embedding });
+    const combinedText = `
+      Boutique name: ${boutique.name}
+      Location: ${boutique.location?.address || ''}
+      Dress types: ${boutique.dressTypes?.join(', ') || ''}
+      Catalogue: ${boutique.catalogue?.join(', ') || ''}
+      Rating: ${boutique.rating || 'No rating yet'}
+    `;
+
+    const embedding = await getEmbedding(combinedText);
+    await BoutiqueModel.findByIdAndUpdate(boutiqueId, { embedding });
+
+    logger.info("updateBoutiqueEmbedding: Embedding updated successfully", { boutiqueId });
+  } catch (error) {
+    logger.error("updateBoutiqueEmbedding: Error occurred", { boutiqueId, error: error.stack || error });
+    throw error;
+  }
 };
 
 export const addHeaderImage = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId; // ⬅️ Set by auth middleware
+    logger.info("addHeaderImage: Request received", { boutiqueId });
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("addHeaderImage: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
     const uploadedImages = req.files?.images || [];
 
     if (uploadedImages.length === 0) {
+      logger.warn("addHeaderImage: No images uploaded", { boutiqueId });
       return res.status(400).json({ message: "At least one image must be uploaded." });
     }
 
@@ -155,24 +171,36 @@ export const addHeaderImage = async (req, res) => {
     const remainingSlots = 5 - currentCount;
 
     if (uploadedImages.length > remainingSlots) {
+      logger.warn("addHeaderImage: Upload exceeds slot limit", {
+        boutiqueId,
+        uploadedCount: uploadedImages.length,
+        remainingSlots,
+      });
       return res.status(400).json({
         message: `You can only upload ${remainingSlots} more image(s).`,
       });
     }
 
-    // Push image paths (or Cloudinary URLs) to headerImage array
     uploadedImages.forEach((file) => {
-      boutique.headerImage.push(file.path); // or `file.location` if you're using S3
+      boutique.headerImage.push(file.path);
     });
 
     await boutique.save();
+
+    logger.info("addHeaderImage: Header images uploaded successfully", {
+      boutiqueId,
+      totalImages: boutique.headerImage.length,
+    });
 
     res.status(200).json({
       message: "Header images uploaded successfully.",
       headerImage: boutique.headerImage,
     });
   } catch (error) {
-    console.error("Error uploading header images:", error);
+    logger.error("addHeaderImage: Error uploading header images", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error,
+    });
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -180,77 +208,100 @@ export const addHeaderImage = async (req, res) => {
 export const deleteAllHeaderImages = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
+    logger.info("deleteAllHeaderImages: Request received", { boutiqueId });
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("deleteAllHeaderImages: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found" });
     }
 
-    // Clear the headerImage array
     boutique.headerImage = [];
     await boutique.save();
+
+    logger.info("deleteAllHeaderImages: Header images cleared", { boutiqueId });
 
     res.status(200).json({
       message: "All header images deleted successfully",
       headerImage: boutique.headerImage,
     });
   } catch (error) {
-    console.error("Error deleting all header images:", error.message);
+    logger.error("deleteAllHeaderImages: Failed to delete header images", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const deleteHeaderImage = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId; // From auth middleware
-    const imageUrl = req.body.imageUrl; // Cloudinary URL to delete
+    const boutiqueId = req.boutiqueId;
+    const imageUrl = req.body.imageUrl;
+
+    logger.info("deleteHeaderImage: Request received", { boutiqueId, imageUrl });
 
     if (!imageUrl) {
+      logger.warn("deleteHeaderImage: Missing image URL", { boutiqueId });
       return res.status(400).json({ message: "Image URL is required for deletion." });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("deleteHeaderImage: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
     const index = boutique.headerImage.indexOf(imageUrl);
     if (index === -1) {
+      logger.warn("deleteHeaderImage: Image URL not found in boutique record", { boutiqueId, imageUrl });
       return res.status(404).json({ message: "Image URL not found in header images." });
     }
 
-    boutique.headerImage.splice(index, 1); // Remove image
+    boutique.headerImage.splice(index, 1);
     await boutique.save();
+
+    logger.info("deleteHeaderImage: Header image deleted successfully", { boutiqueId, deletedImage: imageUrl });
 
     res.status(200).json({
       message: "Header image deleted successfully.",
       headerImage: boutique.headerImage,
     });
   } catch (error) {
-    console.error("Error deleting header image:", error);
+    logger.error("deleteHeaderImage: Error deleting header image", {
+      boutiqueId: req.boutiqueId,
+      imageUrl: req.body.imageUrl,
+      error: error.stack || error,
+    });
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
+
 export const updateBoutiqueDetails = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId; // Auth middleware injects this
+    const boutiqueId = req.boutiqueId;
     const { name, location, area } = req.body;
 
-    // ✅ Validate boutique ID
+    logger.info("updateBoutiqueDetails: Update request received", { boutiqueId, body: req.body });
+
     if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      logger.warn("updateBoutiqueDetails: Invalid boutique ID", { boutiqueId });
       return res.status(400).json({ message: "Invalid boutique ID" });
     }
 
     const updateFields = {};
 
-    // ✅ Update name
     if (name) updateFields.name = name;
 
-    // ✅ Validate and update area
     if (area) {
       const trimmedArea = area.trim();
       if (!predefinedHyderabadAreas.includes(trimmedArea)) {
+        logger.warn("updateBoutiqueDetails: Invalid area", {
+          boutiqueId,
+          area: trimmedArea,
+          allowedAreas: predefinedHyderabadAreas,
+        });
         return res.status(400).json({
           message: `Invalid area. Choose from predefined Hyderabad areas only.`,
           allowedAreas: predefinedHyderabadAreas,
@@ -259,7 +310,6 @@ export const updateBoutiqueDetails = async (req, res) => {
       updateFields.area = trimmedArea;
     }
 
-    // ✅ Update location subfields
     if (location) {
       if (location.address) updateFields['location.address'] = location.address;
       if (location.city) updateFields['location.city'] = location.city;
@@ -268,12 +318,11 @@ export const updateBoutiqueDetails = async (req, res) => {
       if (location.longitude) updateFields['location.longitude'] = location.longitude;
     }
 
-    // ⛔ No fields to update
     if (Object.keys(updateFields).length === 0) {
+      logger.warn("updateBoutiqueDetails: No valid fields provided", { boutiqueId });
       return res.status(400).json({ message: "No valid fields provided to update" });
     }
 
-    // ✅ Update in DB
     const updatedBoutique = await BoutiqueModel.findByIdAndUpdate(
       boutiqueId,
       { $set: updateFields },
@@ -281,11 +330,15 @@ export const updateBoutiqueDetails = async (req, res) => {
     );
 
     if (!updatedBoutique) {
+      logger.warn("updateBoutiqueDetails: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found" });
     }
 
-    // ✅ Recalculate embedding based on updated fields
     await updateBoutiqueEmbedding(boutiqueId);
+    logger.info("updateBoutiqueDetails: Boutique updated and embedding refreshed", {
+      boutiqueId,
+      updatedFields: updateFields,
+    });
 
     res.status(200).json({
       message: "Boutique details updated successfully",
@@ -293,37 +346,53 @@ export const updateBoutiqueDetails = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error updating boutique:", error.message);
+    logger.error("updateBoutiqueDetails: Error updating boutique", {
+      boutiqueId,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
-
 
 export const requestPhoneNumberChange = async (req, res) => {
   try {
     const boutiqueId = req.boutiqueId;
     const { newPhone } = req.body;
 
+    logger.info("requestPhoneNumberChange: Request received", { boutiqueId, newPhone });
+
     if (!newPhone || !/^\+91\d{10}$/.test(newPhone)) {
+      logger.warn("requestPhoneNumberChange: Invalid phone number format", { boutiqueId, newPhone });
       return res.status(400).json({ message: "Invalid new phone number format" });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: "Boutique not found" });
+    if (!boutique) {
+      logger.warn("requestPhoneNumberChange: Boutique not found", { boutiqueId });
+      return res.status(404).json({ message: "Boutique not found" });
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
     boutique.otp = otp;
     await boutique.save();
 
-    // ⛔ No SMS logic here — just log for testing
+    logger.info("requestPhoneNumberChange: OTP generated and saved", {
+      boutiqueId,
+      oldPhone: boutique.phone,
+      otp,
+    });
+
+    // ⛔ Simulated SMS log
     console.log(`OTP for boutique (${boutique.phone}) to change phone: ${otp}`);
 
     res.status(200).json({
       message: "OTP generated and logged for testing. Use it to confirm phone update.",
     });
   } catch (error) {
-    console.error("Error generating OTP:", error.message);
+    logger.error("requestPhoneNumberChange: Failed to generate OTP", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Failed to initiate phone update" });
   }
 };
@@ -333,19 +402,27 @@ export const confirmPhoneNumberChange = async (req, res) => {
     const boutiqueId = req.boutiqueId;
     const { otp, newPhone } = req.body;
 
+    logger.info("confirmPhoneNumberChange: Request received", { boutiqueId, newPhone });
+
     if (!otp || !newPhone || !/^\+91\d{10}$/.test(newPhone)) {
+      logger.warn("confirmPhoneNumberChange: Missing or invalid input", { boutiqueId, otp, newPhone });
       return res.status(400).json({ message: "OTP and valid new phone number are required" });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
-    if (!boutique) return res.status(404).json({ message: "Boutique not found" });
+    if (!boutique) {
+      logger.warn("confirmPhoneNumberChange: Boutique not found", { boutiqueId });
+      return res.status(404).json({ message: "Boutique not found" });
+    }
 
     if (boutique.otp !== otp) {
+      logger.warn("confirmPhoneNumberChange: Invalid OTP", { boutiqueId, providedOtp: otp });
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
     const alreadyExists = await BoutiqueModel.findOne({ phone: newPhone });
     if (alreadyExists) {
+      logger.warn("confirmPhoneNumberChange: Phone already registered", { boutiqueId, newPhone });
       return res.status(400).json({ message: "This phone number is already registered" });
     }
 
@@ -353,9 +430,14 @@ export const confirmPhoneNumberChange = async (req, res) => {
     boutique.otp = ''; // Clear OTP
     await boutique.save();
 
+    logger.info("confirmPhoneNumberChange: Phone number updated", { boutiqueId, newPhone });
+
     res.status(200).json({ message: "Phone number updated successfully" });
   } catch (error) {
-    console.error("Error confirming phone number update:", error.message);
+    logger.error("confirmPhoneNumberChange: Error occurred", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Could not update phone number" });
   }
 };
@@ -365,28 +447,37 @@ export const changePassword = async (req, res) => {
     const boutiqueId = req.boutiqueId;
     const { oldPassword, newPassword } = req.body;
 
+    logger.info("changePassword: Request received", { boutiqueId });
+
     if (!oldPassword || !newPassword) {
+      logger.warn("changePassword: Missing passwords", { boutiqueId });
       return res.status(400).json({ message: "Old and new passwords are required" });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("changePassword: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found" });
     }
 
-    console.log("Entered old password:", oldPassword);
-    console.log("Stored password in DB:", boutique.password);
-
-    if (boutique.password !== oldPassword) {
+    const isMatch = await bcrypt.compare(oldPassword, boutique.password);
+    if (!isMatch) {
+      logger.warn("changePassword: Incorrect old password", { boutiqueId });
       return res.status(401).json({ message: "Incorrect old password" });
     }
 
-    boutique.password = newPassword;
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+    boutique.password = hashedNewPassword;
     await boutique.save();
+
+    logger.info("changePassword: Password changed successfully", { boutiqueId });
 
     res.status(200).json({ message: "Password changed successfully" });
   } catch (error) {
-    console.error("Error changing password:", error.message);
+    logger.error("changePassword: Error during password change", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Server error while changing password" });
   }
 };
@@ -395,81 +486,75 @@ const Boutiquelogin = async function (req, res) {
   try {
     const { name, password, phone } = req.body;
 
-    console.log("Login attempt for phone:", phone); // ✅ Don't log full credentials
+    logger.info("Boutiquelogin: Login attempt", { phone });
 
-    // Validate required fields
     if (!name || !password || !phone) {
+      logger.warn("Boutiquelogin: Missing credentials", { phone });
       return res.status(400).json({ message: "name, password, phone are required." });
     }
 
-    // Check if the Boutique exists
     const Boutique = await BoutiqueModel.findOne({ phone });
     if (!Boutique) {
+      logger.warn("Boutiquelogin: Boutique not found", { phone });
       return res.status(404).json({ message: "Boutique Account not found." });
     }
 
-    // ✅ Check name first (simple string comparison)
     if (Boutique.name !== name) {
+      logger.warn("Boutiquelogin: Invalid name", { boutiqueId: Boutique._id, phone });
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    // ✅ Use bcrypt to verify password against hashed version
     const isValidPassword = await bcrypt.compare(password, Boutique.password);
     if (!isValidPassword) {
+      logger.warn("Boutiquelogin: Invalid password", { boutiqueId: Boutique._id, phone });
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    // Generate a new OTP
-    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
-
-    // Set OTP expiry duration (1 minute)
+    const otp = Math.floor(100000 + Math.random() * 900000);
     const OTP_EXPIRATION_TIME = 1; // in minutes
 
-    // Update the Boutique with the OTP and expiration time
     Boutique.otp = otp;
-    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000; // Expiry in milliseconds
+    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
     await Boutique.save();
 
-    //const result = await sendOTP(phone, otp);
+    logger.info("Boutiquelogin: OTP generated and saved", { boutiqueId: Boutique._id, phone });
 
-    //if (!result.success) {
-    //  return res.status(500).json({ message: "Failed to send OTP", error: result.error });
-    //}
-
-    // ⚠️ For development only - remove in production
-    console.log(`Generated OTP for ${phone}: ${otp}`);
-
-    // Respond with instruction to switch to OTP page
+    // Respond with OTP only in development
     res.status(200).json({
       message: "OTP generated. Please verify to complete login.",
       switchToOTPPage: true,
       boutiqueUserId: Boutique._id,
-      // ⚠️ Remove OTP from response in production for security
       ...(process.env.NODE_ENV === 'development' && { otp })
     });
   } catch (error) {
-    console.error("Error during login:", error.message);
-    console.error("Stack trace:", error.stack);
-
+    logger.error("Boutiquelogin: Login error", {
+      error: error.stack || error.message,
+      requestBody: req.body
+    });
     res.status(500).json({ message: "An unexpected error occurred during login." });
   }
 };
 
 const boutiquesData = async function (req, res) {
   try {
-    const boutiqueId = req.user.userId; // ⬅️ From JWT via authMiddleware
+    const boutiqueId = req.user.userId; // From JWT via authMiddleware
+
+    logger.info("boutiquesData: Fetch request received", { boutiqueId });
 
     const boutique = await BoutiqueModel.findById(
       boutiqueId,
-      'name location phone headerImage area' // 🆕 include 'area'
+      'name location phone headerImage area' // include 'area'
     );
 
     if (!boutique) {
+      logger.warn("boutiquesData: Boutique not found", { boutiqueId });
       return res.status(404).json({
         success: false,
         message: "Boutique not found",
       });
     }
+
+    logger.info("boutiquesData: Boutique fetched successfully", { boutiqueId });
 
     res.status(200).json({
       success: true,
@@ -477,7 +562,10 @@ const boutiquesData = async function (req, res) {
       data: boutique,
     });
   } catch (error) {
-    console.error("Error fetching boutique:", error);
+    logger.error("boutiquesData: Error fetching boutique", {
+      boutiqueId: req.user?.userId,
+      error: error.stack || error.message || error,
+    });
 
     res.status(500).json({
       success: false,
@@ -491,32 +579,35 @@ const verifyOtpFB = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
+    logger.info("verifyOtpFB: OTP verification requested", { phone });
+
     if (!phone || !otp) {
+      logger.warn("verifyOtpFB: Missing phone or OTP", { phone });
       return res.status(400).json({ message: "Phone number and OTP are required." });
     }
 
     const user = await BoutiqueModel.findOne({ phone });
-    console.log("user : ", user.otp);
+
     if (!user) {
+      logger.warn("verifyOtpFB: Boutique not found", { phone });
       return res.status(404).json({ message: "Boutique account not found." });
     }
 
-    if (!user.otp) { //for later otp expiration || Date.now() > user.otpExpiry || !user.otpExpiry check otp expiry
+    if (!user.otp) {
+      logger.warn("verifyOtpFB: OTP is missing or expired", { phone });
       return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
     if (otp !== user.otp) {
+      logger.warn("verifyOtpFB: Incorrect OTP", { phone, enteredOtp: otp });
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
-    // 🔐 Generate JWT tokens
     const accessToken = jwt.sign(
       { userId: user._id, name: user.name, role: user.role },
       process.env.ACCESS_TOKEN_SECRET,
       { expiresIn: "15m" }
     );
-
-    console.log(`'access token : `, accessToken);
 
     const refreshToken = jwt.sign(
       { userId: user._id },
@@ -524,28 +615,30 @@ const verifyOtpFB = async (req, res) => {
       { expiresIn: "30d" }
     );
 
-    // 💾 Save refresh token and clear OTP
     user.refreshToken = refreshToken;
     user.otp = null;
     user.otpExpiry = null;
     await user.save();
 
-    // 🍪 Send accessToken cookie (HTTP-only, secure)
-    res.cookie("accessToken", accessToken, {
-      httpOnly: true,
-      secure: true, // 🛡️ Use HTTPS only
-      sameSite: 'None',
-      domain : 'needles-v1.onrender.com',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+    logger.info("verifyOtpFB: OTP verified and tokens issued", {
+      boutiqueId: user._id,
     });
 
-    // 🍪 Send refreshToken cookie (HTTP-only, secure)
+    // Send HTTP-only cookies
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None',
+      domain: 'needles-v1.onrender.com',
+      maxAge: 15 * 60 * 1000,
+    });
+
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: true, // 🛡️ Use HTTPS only
+      secure: true,
       sameSite: 'None',
-      domain : 'needles-v1.onrender.com',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      domain: 'needles-v1.onrender.com',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
     res.status(200).json({
@@ -555,10 +648,13 @@ const verifyOtpFB = async (req, res) => {
         name: user.name,
         role: user.role,
       },
-      accessToken,
+      accessToken, // ⚠️ OK in response (optional)
     });
   } catch (error) {
-    console.error("Error verifying OTP:", error);
+    logger.error("verifyOtpFB: Internal server error", {
+      phone: req.body?.phone,
+      error: error.stack || error.message || error,
+    });
     res.status(500).json({ message: "Internal server error." });
   }
 };
@@ -568,17 +664,18 @@ const boutiqueSearch = async function (req, res) {
   try {
     const userId = req.userId;
     if (!userId) {
+      logger.warn("boutiqueSearch: Unauthorized access");
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
     const { query } = req.query;
     if (!query || typeof query !== "string") {
+      logger.warn("boutiqueSearch: Missing or invalid query", { userId });
       return res.status(400).json({ message: "Query is required for boutique search." });
     }
 
     const originalWordCount = query.split(/\s+/).filter(Boolean).length;
 
-    // 🧠 Parse natural language query
     const parseQuery = (query) => {
       const ratingRegex = /(at least|above|under|less than|more than)?\s*(\d(\.\d+)?)(\s*stars?| star rating)?/i;
       const areaRegex = /\bin\s([a-zA-Z\s]+)/i;
@@ -626,15 +723,14 @@ const boutiqueSearch = async function (req, res) {
 
     const { cleanedQuery, ratingValue, ratingOp, areaValue } = parseQuery(query);
 
-    // 🧠 Check for empty query
     if (!cleanedQuery && !ratingValue && !areaValue) {
+      logger.warn("boutiqueSearch: Query too vague", { userId, originalQuery: query });
       return res.status(400).json({
         message: "Query too vague. Please provide a dress type, rating, or location.",
         results: [],
       });
     }
 
-    // ✅ Area-only fallback
     if (
       (!cleanedQuery || cleanedQuery.toLowerCase() === "show boutiques") &&
       areaValue &&
@@ -646,6 +742,10 @@ const boutiqueSearch = async function (req, res) {
         .limit(10)
         .select("name area averageRating dressTypes.type dressTypes.images");
 
+      logger.info("boutiqueSearch: Area-only fallback", {
+        userId, areaValue, count: areaOnlyResults.length,
+      });
+
       return res.status(200).json({
         message: "Area-only search (fallback)",
         results: areaOnlyResults.map(b => ({
@@ -655,7 +755,6 @@ const boutiqueSearch = async function (req, res) {
       });
     }
 
-    // ✅ Short query fallback using original word count
     if (originalWordCount <= 2) {
       const keywordFallback = await BoutiqueModel.find({
         $or: [
@@ -670,6 +769,10 @@ const boutiqueSearch = async function (req, res) {
         .limit(5)
         .select("name area averageRating dressTypes.type dressTypes.images");
 
+      logger.info("boutiqueSearch: Keyword-based fallback", {
+        userId, cleanedQuery, count: keywordFallback.length,
+      });
+
       return res.status(200).json({
         message: "Short query keyword-based search",
         results: keywordFallback.map(b => ({
@@ -682,18 +785,23 @@ const boutiqueSearch = async function (req, res) {
     // 🧠 Semantic embedding
     let queryVector;
     try {
-      console.log("🧠 Generating vector for:", cleanedQuery);
+      logger.info("boutiqueSearch: Generating embedding vector", { userId, cleanedQuery });
       queryVector = await getEmbedding(cleanedQuery);
     } catch (err) {
-      console.error("❌ Vector generation failed:", err.message);
+      logger.error("boutiqueSearch: Embedding generation failed", {
+        userId,
+        error: err.message,
+      });
       return res.status(500).json({ message: "Failed to generate semantic embedding." });
     }
 
-    // 🧾 Log activity
     try {
       await logUserActivity(userId, "search", cleanedQuery, queryVector);
     } catch (logErr) {
-      console.warn("⚠️ Logging failed:", logErr.message);
+      logger.warn("boutiqueSearch: Activity logging failed", {
+        userId,
+        error: logErr.message,
+      });
     }
 
     const mustFilters = [];
@@ -752,11 +860,18 @@ const boutiqueSearch = async function (req, res) {
     const semanticResults = await BoutiqueModel.aggregate(pipeline);
 
     if (!semanticResults.length) {
+      logger.info("boutiqueSearch: No semantic results found", { userId });
       return res.status(200).json({
         message: "No semantic results found.",
         results: [],
       });
     }
+
+    logger.info("boutiqueSearch: Semantic search successful", {
+      userId,
+      resultCount: semanticResults.length,
+      cleanedQuery,
+    });
 
     return res.status(200).json({
       message: "Semantic search successful",
@@ -766,7 +881,10 @@ const boutiqueSearch = async function (req, res) {
       })),
     });
   } catch (error) {
-    console.error("❌ Boutique Search Error:", error);
+    logger.error("boutiqueSearch: Unhandled server error", {
+      userId: req.userId,
+      error: error.stack || error.message,
+    });
     return res.status(500).json({
       message: "Server error. Could not complete boutique search.",
       error: error.message,
@@ -776,19 +894,13 @@ const boutiqueSearch = async function (req, res) {
 
 
 
-
-
-
-
-
-
-
 const viewBoutiqueDetails = async (req, res) => {
   try {
     const { boutiqueId } = req.params;
 
     // ✅ Step 1: Validate the boutique ID
     if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      logger.warn("viewBoutiqueDetails: Invalid boutique ID", { boutiqueId });
       return res.status(400).json({ message: "Invalid boutique ID." });
     }
 
@@ -798,40 +910,54 @@ const viewBoutiqueDetails = async (req, res) => {
     const cached = await redis.get(cacheKey);
     if (cached) {
       try {
-        const boutiqueFromCache = JSON.parse(cached); // ✅ Parse stringified JSON
-        console.log(`[REDIS] Cache hit for boutiqueId: ${boutiqueId}`);
-        if (req.userId) {
-          console.log(`User ID ${req.userId} viewed boutique ${boutiqueId}`);
-        } else {
-          console.log(`Guest viewed boutique ${boutiqueId}`);
-        }
+        const boutiqueFromCache = JSON.parse(cached);
+        logger.info("viewBoutiqueDetails: Cache hit", {
+          boutiqueId,
+          viewer: req.userId || 'guest',
+        });
+
         return res.status(200).json({ boutique: boutiqueFromCache });
       } catch (err) {
-        console.warn(`[REDIS] Invalid JSON in cache for boutiqueId ${boutiqueId}. Deleting cache.`);
-        await redis.del(cacheKey); // ✅ Delete corrupted cache
+        logger.warn("viewBoutiqueDetails: Corrupted cache, deleting", {
+          boutiqueId,
+          error: err.message,
+        });
+        await redis.del(cacheKey);
       }
+    } else {
+      logger.info("viewBoutiqueDetails: Cache miss", {
+        boutiqueId,
+        viewer: req.userId || 'guest',
+      });
     }
 
     // ✅ Step 3: Fetch from MongoDB
     const boutique = await BoutiqueModel.findById(boutiqueId).lean();
     if (!boutique) {
+      logger.warn("viewBoutiqueDetails: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // ✅ Step 4: Store stringified JSON in Redis with 3-minute TTL
+    // ✅ Step 4: Cache in Redis (3-minute TTL)
     await redis.set(cacheKey, JSON.stringify(boutique), { ex: 180 });
 
-    // ✅ Step 5: Respond with data
-    if (req.userId) {
-      console.log(`User ID ${req.userId} viewed boutique ${boutiqueId}`);
-    } else {
-      console.log(`Guest viewed boutique ${boutiqueId}`);
-    }
+    logger.info("viewBoutiqueDetails: Boutique data served from DB", {
+      boutiqueId,
+      viewer: req.userId || 'guest',
+    });
 
+    // ✅ Step 5: Return response
     return res.status(200).json({ boutique });
   } catch (error) {
-    console.error("Error in viewing boutique details:", error.message);
-    return res.status(500).json({ message: "Server error", error: error.message });
+    logger.error("viewBoutiqueDetails: Internal error", {
+      boutiqueId: req.params?.boutiqueId,
+      error: error.stack || error.message,
+    });
+
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 
@@ -842,67 +968,82 @@ const addItemToCatalogue = async (req, res) => {
     const { newItems } = req.body;
     const boutiqueId = req.boutiqueId;
 
-    // Validate input
     if (!boutiqueId || !newItems || !Array.isArray(newItems)) {
-      return res
-        .status(400)
-        .json({ message: "Boutique ID and valid newItems array are required." });
+      logger.warn("addItemToCatalogue: Invalid input", {
+        boutiqueId,
+        received: req.body,
+      });
+      return res.status(400).json({
+        message: "Boutique ID and valid newItems array are required.",
+      });
     }
 
-    // Find the boutique by ID
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("addItemToCatalogue: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // Add new items to the catalogue
     newItems.forEach((item) => {
       const itemName = Array.isArray(item.itemName) ? item.itemName : [String(item.itemName)];
       const price = Array.isArray(item.price) ? item.price.map(Number) : [Number(item.price)];
 
-      // Only push if itemName and price are valid
       if (itemName[0] && price[0]) {
-        boutique.catalogue.push({
-          itemName,
-          price,
-        });
+        boutique.catalogue.push({ itemName, price });
+      } else {
+        logger.warn("addItemToCatalogue: Invalid item skipped", { item });
       }
     });
 
-    // Save the updated boutique
     await boutique.save();
+
+    logger.info("addItemToCatalogue: Items added successfully", {
+      boutiqueId,
+      addedItems: newItems.length,
+    });
 
     res.status(200).json({
       message: "Items added to the catalogue successfully.",
       updatedCatalogue: boutique.catalogue,
     });
   } catch (error) {
-    console.error("Error adding items to catalogue:", error);
+    logger.error("addItemToCatalogue: Internal error", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message,
+    });
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
 
 const getBoutiqueCatalogue = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId; // ⬅️ Use injected boutique ID from middleware
+    const boutiqueId = req.boutiqueId;
 
-    // Find boutique by ID and exclude _id from catalogue items
     const boutique = await BoutiqueModel.findById(boutiqueId).select("name catalogue -_id");
 
     if (!boutique) {
+      logger.warn("getBoutiqueCatalogue: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found" });
     }
+
+    logger.info("getBoutiqueCatalogue: Catalogue retrieved", {
+      boutiqueId,
+      catalogueSize: boutique.catalogue.length,
+    });
 
     res.status(200).json({
       message: "Catalogue retrieved successfully",
       boutiqueName: boutique.name,
       catalogue: boutique.catalogue.map(item => ({
         itemName: item.itemName,
-        price: item.price
+        price: item.price,
       })),
     });
   } catch (error) {
-    console.error("Error retrieving boutique catalogue:", error);
+    logger.error("getBoutiqueCatalogue: Server error", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message,
+    });
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -910,28 +1051,28 @@ const getBoutiqueCatalogue = async (req, res) => {
 export const getBoutiqueCatalogueFU = async (req, res) => {
   try {
     const { boutiqueId } = req.params;
-    const userId = req.userId; // ✅ Injected by authMiddleware
+    const userId = req.userId;
 
     if (!mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      logger.warn("getBoutiqueCatalogueFU: Invalid boutique ID", { boutiqueId, userId });
       return res.status(400).json({ message: "Invalid boutique ID." });
     }
 
     const cacheKey = `catalogue:${boutiqueId}`;
 
-    // ⚡ Check Redis cache
     const cached = await redis.get(cacheKey);
     if (cached) {
-      console.log(`[REDIS] Catalogue cache hit for boutique: ${boutiqueId}`);
+      logger.info("getBoutiqueCatalogueFU: Cache hit", { boutiqueId, userId });
       return res.status(200).json({
         message: "Catalogue retrieved successfully (cached)",
         userId,
-        ...cached
+        ...JSON.parse(cached),
       });
     }
 
     const boutique = await BoutiqueModel.findById(boutiqueId).select("name catalogue");
-
     if (!boutique) {
+      logger.warn("getBoutiqueCatalogueFU: Boutique not found", { boutiqueId, userId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
@@ -943,8 +1084,13 @@ export const getBoutiqueCatalogueFU = async (req, res) => {
       })),
     };
 
-    // 🧠 Cache for 30 min
-    await redis.set(cacheKey, responseData, { ex: 1800 });
+    await redis.set(cacheKey, JSON.stringify(responseData), { ex: 1800 });
+
+    logger.info("getBoutiqueCatalogueFU: Catalogue fetched and cached", {
+      boutiqueId,
+      userId,
+      itemCount: boutique.catalogue.length,
+    });
 
     res.status(200).json({
       message: "Catalogue retrieved successfully",
@@ -952,48 +1098,69 @@ export const getBoutiqueCatalogueFU = async (req, res) => {
       ...responseData,
     });
   } catch (error) {
-    console.error("Error retrieving boutique catalogue:", error);
+    logger.error("getBoutiqueCatalogueFU: Server error", {
+      boutiqueId: req.params?.boutiqueId,
+      userId: req.userId,
+      error: error.stack || error.message,
+    });
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
+
 const deleteItemFromCatalogue = async (req, res) => {
   try {
     const { itemNames } = req.body;
-    const boutiqueId = req.boutiqueId; // ✅ Use boutiqueId from the request
+    const boutiqueId = req.boutiqueId;
 
-    // Validate input
     if (!boutiqueId || !itemNames || !Array.isArray(itemNames)) {
-      return res
-        .status(400)
-        .json({ message: "Boutique ID and a valid array of itemNames are required." });
+      logger.warn("deleteItemFromCatalogue: Invalid request body", {
+        boutiqueId,
+        itemNames,
+      });
+      return res.status(400).json({
+        message: "Boutique ID and a valid array of itemNames are required.",
+      });
     }
 
-    // Find the boutique by ID
     const boutique = await BoutiqueModel.findById(boutiqueId);
     if (!boutique) {
+      logger.warn("deleteItemFromCatalogue: Boutique not found", { boutiqueId });
       return res.status(404).json({ message: "Boutique not found." });
     }
 
-    // Loop through the catalogue and remove matching itemNames
+    const originalLength = boutique.catalogue.length;
+
+    // Filter out matching names from each item
     boutique.catalogue.forEach((item) => {
       item.itemName = item.itemName.filter(
-        (name) => !itemNames.includes(name) // Remove names that match
+        (name) => !itemNames.includes(name)
       );
     });
 
-    // Filter out catalogue entries with empty itemName arrays
-    boutique.catalogue = boutique.catalogue.filter((item) => item.itemName.length > 0);
+    // Remove empty catalogue items
+    boutique.catalogue = boutique.catalogue.filter(
+      (item) => item.itemName.length > 0
+    );
 
-    // Save changes
     await boutique.save();
+
+    logger.info("deleteItemFromCatalogue: Items deleted", {
+      boutiqueId,
+      deletedItems: itemNames,
+      updatedCatalogueSize: boutique.catalogue.length,
+      originalCatalogueSize: originalLength,
+    });
 
     res.status(200).json({
       message: "Items removed from the catalogue successfully.",
       updatedCatalogue: boutique.catalogue,
     });
   } catch (error) {
-    console.error("Error deleting items from catalogue:", error);
+    logger.error("deleteItemFromCatalogue: Server error", {
+      boutiqueId: req.boutiqueId,
+      error: error.stack || error.message,
+    });
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
@@ -1002,6 +1169,7 @@ const getRecommendedBoutiques = async (req, res) => {
   try {
     const userId = req.userId;
     if (!userId) {
+      logger.warn("Unauthorized access attempt to getRecommendedBoutiques");
       return res.status(401).json({ message: "Unauthorized access." });
     }
 
@@ -1014,6 +1182,7 @@ const getRecommendedBoutiques = async (req, res) => {
       const cacheTime = parsed._cachedAt || 0;
 
       if (cacheTime >= lastViewed) {
+        logger.info(`Cache hit for recommended boutiques [userId=${userId}]`);
         return res.status(200).json({
           message: "Recommended boutiques fetched from cache.",
           recommendedBoutiques: parsed.boutiques,
@@ -1021,15 +1190,14 @@ const getRecommendedBoutiques = async (req, res) => {
       }
     }
 
-    // Get user location
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
+      logger.warn(`Missing location for user [userId=${userId}]`);
       return res.status(400).json({ message: "User location is missing." });
     }
 
     const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
 
-    // Fetch all boutiques with essential fields
     const allBoutiques = await BoutiqueModel.find()
       .select("name area dressTypes averageRating ratings headerImage location embedding")
       .lean();
@@ -1039,10 +1207,10 @@ const getRecommendedBoutiques = async (req, res) => {
     );
 
     if (boutiquesWithCoords.length === 0) {
+      logger.warn("No boutiques with valid coordinates found");
       return res.status(404).json({ message: "No boutiques with valid coordinates." });
     }
 
-    // Build distance matrix destinations
     const destinations = boutiquesWithCoords
       .map(b => `${b.location.latitude},${b.location.longitude}`)
       .join("|");
@@ -1058,10 +1226,10 @@ const getRecommendedBoutiques = async (req, res) => {
 
     const distances = distanceRes.data.rows[0]?.elements;
     if (!distances || distances.length !== boutiquesWithCoords.length) {
+      logger.error("Mismatch or failure in Google Maps distance matrix API response");
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
-    // Score boutiques
     const scored = boutiquesWithCoords.map((b, i) => {
       const distanceKm = distances[i]?.distance?.value / 1000 || 100;
       const ratingScore = b.averageRating || 0;
@@ -1084,12 +1252,10 @@ const getRecommendedBoutiques = async (req, res) => {
 
     const sorted = scored.sort((a, b) => b.combinedScore - a.combinedScore).slice(0, 10);
 
-    // Log activity for top 5
     for (const boutique of sorted.slice(0, 5)) {
       await logUserActivity(userId, "view", `Boutique:${boutique.name}`, boutique.embedding);
     }
 
-    // ✅ Clean data for caching (remove embeddings)
     const cacheData = sorted.map(({ embedding, ...rest }) => rest);
 
     await redis.set(
@@ -1101,13 +1267,15 @@ const getRecommendedBoutiques = async (req, res) => {
       { ex: 3600 }
     );
 
+    logger.info(`Recommended boutiques generated [userId=${userId}]`);
+
     return res.status(200).json({
       message: "Recommended boutiques fetched successfully.",
       recommendedBoutiques: sorted,
     });
 
   } catch (error) {
-    console.error(`❌ Error fetching recommended boutiques for user ${req.userId}:`, error);
+    logger.error(`Error fetching recommended boutiques for user [userId=${req.userId}]: ${error.stack}`);
     return res.status(500).json({ message: "An error occurred while fetching boutiques" });
   }
 };
@@ -1141,37 +1309,43 @@ function safeJSONParse(str) {
 export const getRecommendedDressTypes = async (req, res) => {
   try {
     const userId = req.userId;
-    if (!userId) return res.status(401).json({ message: "Unauthorized access." });
+    if (!userId) {
+      logger.warn("Unauthorized access to recommended dress types");
+      return res.status(401).json({ message: "Unauthorized access." });
+    }
 
     const redisKey = `recommended:${userId}`;
     const cached = await redis.get(redisKey);
     const parsed = safeJSONParse(cached);
 
-    if (parsed && parsed.data && parsed.timestamp) {
+    if (parsed?.data && parsed.timestamp) {
       const lastActivity = await getRecentUserEmbeddings(userId, "view", 1);
       const lastViewed = lastActivity?.[0]?.timestamp || 0;
-      const cacheTimestamp = parsed.timestamp || 0;
 
-      if (cacheTimestamp >= lastViewed) {
+      if (parsed.timestamp >= lastViewed) {
+        logger.info(`Cache hit for recommended dress types [userId=${userId}]`);
         return res.status(200).json({
           message: "Returned from Redis cache",
           dressTypes: parsed.data,
         });
       }
     } else if (cached) {
-      console.error("❌ Corrupt Redis cache. Deleting key.");
+      logger.warn(`Corrupt Redis cache for user [userId=${userId}]. Deleting.`);
       await redis.del(redisKey);
     }
 
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
+      logger.warn(`User location missing for [userId=${userId}]`);
       return res.status(400).json({ message: "User location missing." });
     }
 
     const userCoords = `${user.address.location.lat},${user.address.location.lng}`;
     const boutiques = await BoutiqueModel.find().lean();
     const boutiqueWithCoords = boutiques.filter(b => b.location?.latitude && b.location?.longitude);
+
     if (!boutiqueWithCoords.length) {
+      logger.warn("No boutiques with valid coordinates");
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
@@ -1182,6 +1356,7 @@ export const getRecommendedDressTypes = async (req, res) => {
 
     const distances = distanceRes.data?.rows?.[0]?.elements;
     if (!distances) {
+      logger.error("Google Maps API failed for distance matrix");
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
@@ -1203,8 +1378,11 @@ export const getRecommendedDressTypes = async (req, res) => {
     });
 
     if (!rawTypes.length) {
+      logger.info(`No dress types found from top boutiques for user [userId=${userId}]`);
       return res.status(200).json({ message: "No dress types available near you." });
     }
+
+    logger.info(`Generating embeddings for rawTypes and canonicalLabels [userId=${userId}]`);
 
     const [canonicalRes, rawRes] = await Promise.all([
       axios.post("https://api.openai.com/v1/embeddings", {
@@ -1253,6 +1431,7 @@ export const getRecommendedDressTypes = async (req, res) => {
     const userEmbeddings = await getRecentUserEmbeddings(userId, "view", 50);
 
     if (!userEmbeddings.length) {
+      logger.info(`No user activity. Returning trending dress types for [userId=${userId}]`);
       const fallbackData = uniqueLabels.map(label => ({
         label,
         imageUrl: imageMap[normalize(label)] || null,
@@ -1269,6 +1448,8 @@ export const getRecommendedDressTypes = async (req, res) => {
         dressTypes: fallbackData,
       });
     }
+
+    logger.info(`Scoring dress types for relevance [userId=${userId}]`);
 
     const labelRes = await axios.post("https://api.openai.com/v1/embeddings", {
       input: uniqueLabels,
@@ -1306,13 +1487,15 @@ export const getRecommendedDressTypes = async (req, res) => {
       timestamp: Date.now(),
     }), { ex: 3600 });
 
+    logger.info(`Recommended dress types served [userId=${userId}]`);
+
     return res.status(200).json({
       message: "Recommended dress types using distance, rating and user activity",
       dressTypes: sorted,
     });
 
   } catch (err) {
-    console.error("Error in getRecommendedDressTypes:", err);
+    logger.error(`❌ getRecommendedDressTypes failed [userId=${req.userId}] - ${err.message}`);
     return res.status(500).json({
       message: "Server error",
       error: err?.response?.data || err.message,
@@ -1327,12 +1510,14 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
     const selectedType = req.params.dressType?.trim();
 
     if (!userId || !selectedType) {
+      logger.warn(`Missing userId or dressType [userId=${userId}, dressType=${selectedType}]`);
       return res.status(400).json({ message: "Missing user ID or dress type." });
     }
 
     const cacheKey = `top-rated:${userId}:${selectedType.toLowerCase()}`;
     const cached = await redis.get(cacheKey);
     if (cached) {
+      logger.info(`Cache hit for top-rated boutiques [userId=${userId}, type=${selectedType}]`);
       return res.status(200).json({
         message: `Top rated boutiques offering ${selectedType} (from cache)`,
         ...cached,
@@ -1341,21 +1526,21 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 
     const user = await UserModel.findById(userId).lean();
     if (!user?.address?.location?.lat || !user?.address?.location?.lng) {
+      logger.warn(`User location missing [userId=${userId}]`);
       return res.status(400).json({ message: "User location is missing." });
     }
 
     const userLoc = `${user.address.location.lat},${user.address.location.lng}`;
-
     const allBoutiques = await BoutiqueModel.find().lean();
-    const boutiquesWithCoords = allBoutiques.filter(
-      b => b.location?.latitude && b.location?.longitude
-    );
+    const boutiquesWithCoords = allBoutiques.filter(b => b.location?.latitude && b.location?.longitude);
 
-    if (boutiquesWithCoords.length === 0) {
+    if (!boutiquesWithCoords.length) {
+      logger.warn("No boutiques with valid coordinates");
       return res.status(404).json({ message: "No valid boutique coordinates available." });
     }
 
-    // Embedding input & canonical labels
+    logger.info(`Generating embeddings for selected type: ${selectedType}`);
+
     const [selectedEmbeddingRes, canonicalEmbeddingRes] = await Promise.all([
       openai.post("/v1/embeddings", {
         input: selectedType,
@@ -1378,17 +1563,18 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
       }
     });
 
+    logger.info(`Best matching canonical label: ${bestMatch} (sim=${bestSim.toFixed(4)})`);
+
     const relevantBoutiques = boutiquesWithCoords.filter(b =>
       b.dressTypes.some(dt => dt.type?.trim().toLowerCase() === bestMatch.toLowerCase())
     );
 
-    if (relevantBoutiques.length === 0) {
+    if (!relevantBoutiques.length) {
+      logger.info(`No boutiques found for canonical dress type: ${bestMatch}`);
       return res.status(404).json({ message: `No boutiques found offering ${bestMatch}.` });
     }
 
-    const destinations = relevantBoutiques
-      .map(b => `${b.location.latitude},${b.location.longitude}`)
-      .join("|");
+    const destinations = relevantBoutiques.map(b => `${b.location.latitude},${b.location.longitude}`).join("|");
 
     const distanceRes = await axios.get("https://maps.googleapis.com/maps/api/distancematrix/json", {
       params: {
@@ -1401,6 +1587,7 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 
     const distances = distanceRes.data.rows[0]?.elements;
     if (!distances || distances.length !== relevantBoutiques.length) {
+      logger.error("Mismatch or failure in distance data from Google Maps API");
       return res.status(500).json({ message: "Failed to fetch distance data from Google Maps." });
     }
 
@@ -1419,6 +1606,8 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 
     const top = scored.sort((a, b) => b.combinedScore - a.combinedScore).slice(0, 5);
 
+    logger.info(`Top 5 boutiques selected for user [userId=${userId}] on dress type: ${bestMatch}`);
+
     for (const boutique of top) {
       await logUserActivity(userId, "view", `Boutique:${boutique.name}`, {
         source: "getTopRatedNearbyBoutiquesForDressType",
@@ -1431,8 +1620,8 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
       boutiques: top,
     };
 
-    // 🧠 Store updated response in Upstash Redis
-    await redis.set(cacheKey, response, { ex: 3600 }); // 1 hour cache
+    await redis.set(cacheKey, response, { ex: 3600 }); // Cache for 1 hour
+    logger.info(`Response cached [key=${cacheKey}]`);
 
     return res.status(200).json({
       message: `Top rated boutiques offering ${bestMatch}`,
@@ -1440,7 +1629,7 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ Error in getTopRatedNearbyBoutiquesForDressType:", err.message);
+    logger.error(`❌ Failed in getTopRatedNearbyBoutiquesForDressType [userId=${req.userId}]: ${err.message}`);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -1449,20 +1638,23 @@ export const getTopRatedNearbyBoutiquesForDressType = async (req, res) => {
 export const getTopRatedBoutiques = async (req, res) => {
   try {
     const userId = req.userId; // 🧑‍💼 Injected by authMiddleware
-    console.log("Request made by user:", userId);
+    logger.info(`📥 getTopRatedBoutiques called by user: ${userId}`);
 
     const topBoutiques = await BoutiqueModel.find({ averageRating: { $gt: 0 } })
       .sort({ averageRating: -1, totalRatings: -1 })
       .limit(5)
       .select("name averageRating totalRatings headerImage area dressTypes");
 
+    logger.info(`✅ Fetched top ${topBoutiques.length} rated boutiques`);
+
     return res.status(200).json({
       success: true,
-      userId, // ✅ Optionally return it in response
+      userId, // Optional: Can help trace issues in frontend
       data: topBoutiques,
     });
+
   } catch (error) {
-    console.error("Error fetching top rated boutiques:", error);
+    logger.error(`❌ Error in getTopRatedBoutiques [userId=${req.userId}]: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch top rated boutiques.",
@@ -1475,45 +1667,63 @@ export const getTopRatedBoutiques = async (req, res) => {
 // Use this in protected routes with accessToken in headers
 export const getViews = async (req, res) => {
   try {
+    const userId = req.userId || "Unknown";
+    logger.info(`📊 getViews called by user: ${userId}`);
+
     const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique/views`, {
       headers: {
-        Authorization: req.headers.authorization, // Pass JWT
+        Authorization: req.headers.authorization, // JWT forwarded
       },
     });
 
+    logger.info(`✅ Views fetched successfully for user: ${userId}`);
     return res.status(200).json(response.data);
+
   } catch (error) {
-    console.error("Error fetching views:", error?.response?.data || error.message);
+    const errMessage = error?.response?.data || error.message;
+    logger.error(`❌ Error fetching views [user=${req.userId}]: ${errMessage}`);
     return res.status(500).json({ error: "Failed to fetch views." });
   }
 };
 
 export const getTopDressType = async (req, res) => {
   try {
+    const userId = req.userId || "Unknown";
+    logger.info(`🎯 getTopDressType called by user: ${userId}`);
+
     const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique/top-dressType`, {
       headers: {
         Authorization: req.headers.authorization,
       },
     });
 
+    logger.info(`✅ Top dress type fetched successfully for user: ${userId}`);
     return res.status(200).json(response.data);
+
   } catch (error) {
-    console.error("Error fetching top dress type:", error?.response?.data || error.message);
+    const errorDetails = error?.response?.data || error.message;
+    logger.error(`❌ Failed to fetch top dress type [user=${userId}]: ${errorDetails}`);
     return res.status(500).json({ error: "Failed to fetch top dress type." });
   }
 };
 
 export const getAnalyticsData = async (req, res) => {
   try {
+    const userId = req.userId || "Unknown";
+    logger.info(`📊 getAnalyticsData called by user: ${userId}`);
+
     const response = await axios.get(`${ANALYTICS_BASE_URL}/boutique`, {
       headers: {
         Authorization: req.headers.authorization,
       },
     });
 
+    logger.info(`✅ Analytics data fetched successfully [user=${userId}]`);
     return res.status(200).json(response.data);
+
   } catch (error) {
-    console.error("Error fetching analytics:", error?.response?.data || error.message);
+    const errDetails = error?.response?.data || error.message;
+    logger.error(`❌ Error fetching analytics data [user=${userId}]: ${errDetails}`);
     return res.status(500).json({ error: "Failed to fetch analytics data." });
   }
 };
@@ -1692,50 +1902,50 @@ export { getDressTypesWithDetails};
 
 const getOrdersByStatus = async (req, res) => {
   try {
-    const boutiqueId = req.boutiqueId; // Extracted from middleware
+    const boutiqueId = req.boutiqueId;
     const { userId, status } = req.query;
 
-    // ✅ Validate ObjectId if provided
     if (boutiqueId && !mongoose.Types.ObjectId.isValid(boutiqueId)) {
+      logger.warn("Invalid boutique ID provided in getOrdersByStatus.");
       return res.status(400).json({ error: "Invalid boutique ID" });
     }
+
     if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
+      logger.warn("Invalid user ID provided in getOrdersByStatus.");
       return res.status(400).json({ error: "Invalid user ID" });
     }
 
-    // ✅ Allowed order statuses
-    const validStatuses = [
-      "In Progress",
-      "Ready for Delivery",
-    ];
+    const validStatuses = ["In Progress", "Ready for Delivery"];
 
-    // ✅ Build query
     const query = {};
     if (boutiqueId) query.boutiqueId = boutiqueId;
     if (userId) query.userId = userId;
 
     if (status) {
       if (!validStatuses.includes(status)) {
-        return res.status(400).json({ error: `Invalid status. Allowed values: ${validStatuses.join(", ")}` });
+        logger.warn(`Invalid status '${status}' provided. Allowed: ${validStatuses.join(", ")}`);
+        return res.status(400).json({
+          error: `Invalid status. Allowed values: ${validStatuses.join(", ")}`,
+        });
       }
       query.status = status;
     } else {
-      // Default to fetching active/paid orders if no status provided
       query["bill.status"] = "Paid";
     }
 
-    // ✅ Fetch orders
     const orders = await OrderModel.find(query)
       .populate("userId", "name phone")
       .populate("boutiqueId", "name location")
       .sort({ createdAt: -1 });
 
+    logger.info(`Fetched ${orders.length} orders for boutique: ${boutiqueId}`);
+    
     res.status(200).json({
       message: `Found ${orders.length} order(s).`,
       orders,
     });
   } catch (error) {
-    console.error("Error fetching orders:", error);
+    logger.error(`Error fetching orders: ${error.message}`);
     res.status(500).json({ error: "Server error", details: error.message });
   }
 };
@@ -1744,6 +1954,7 @@ export const logoutBoutique = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
+      logger.warn("Unauthorized logout attempt: Missing or invalid token header.");
       return res.status(401).json({ message: "Access token missing or invalid." });
     }
 
@@ -1752,19 +1963,18 @@ export const logoutBoutique = async (req, res) => {
     const decoded = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
     const boutiqueId = decoded.userId;
 
-    // Blacklist the access token
     const expiresAt = new Date(decoded.exp * 1000);
     await BlacklistedToken.create({ token: accessToken, expiresAt });
 
-    // Clear refresh token from DB
     await BoutiqueModel.findByIdAndUpdate(boutiqueId, { refreshToken: null });
 
-    // Optionally clear refresh token cookie
     res.clearCookie("refreshToken", { httpOnly: true, secure: true, sameSite: "strict" });
+
+    logger.info(`Boutique ${boutiqueId} logged out successfully.`);
 
     res.status(200).json({ message: "Logged out successfully." });
   } catch (error) {
-    console.error("Logout error:", error.message);
+    logger.error(`Logout error: ${error.message}`);
     res.status(500).json({ message: "Logout failed", error: error.message });
   }
 };
@@ -1775,20 +1985,21 @@ export const getBoutiqueAreas = async (req, res) => {
     const boutiqueId = req.boutiqueId;
 
     if (!boutiqueId) {
+      logger.warn("Unauthorized request: Missing boutique ID from token.");
       return res.status(401).json({ message: "Unauthorized. Boutique ID missing from token." });
     }
 
-    // 🔍 Fetch all boutiques and extract used areas
     const boutiques = await BoutiqueModel.find({}, 'area').lean();
     const usedAreaSet = new Set(
       boutiques.map(b => b.area?.trim()).filter(Boolean)
     );
 
-    // 📋 Map predefined areas with usage flag
     const areas = predefinedHyderabadAreas.map(area => ({
       area,
       inUse: usedAreaSet.has(area),
     }));
+
+    logger.info(`Fetched predefined areas with usage status for boutique ${boutiqueId}`);
 
     res.status(200).json({
       success: true,
@@ -1796,7 +2007,7 @@ export const getBoutiqueAreas = async (req, res) => {
       areas,
     });
   } catch (err) {
-    console.error("❌ Error fetching boutique areas:", err.message);
+    logger.error("❌ Error fetching boutique areas:", err.message);
     res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
@@ -1804,14 +2015,16 @@ export const getBoutiqueAreas = async (req, res) => {
 
 export const getSizeChartForDressType = async (req, res) => {
   try {
-    const userId = req.userId; // ✅ Extracted from JWT by authMiddleware
+    const userId = req.userId;
     const { boutiqueId, dressType, selectedSize } = req.query;
 
     if (!userId) {
+      logger.warn('Unauthorized access attempt: missing or invalid token');
       return res.status(401).json({ message: 'Unauthorized. Token missing or invalid.' });
     }
 
     if (!boutiqueId || !dressType || !selectedSize) {
+      logger.warn('Missing parameters in query: boutiqueId, dressType, or selectedSize');
       return res.status(400).json({
         message: 'boutiqueId, dressType, and selectedSize are required',
       });
@@ -1819,11 +2032,13 @@ export const getSizeChartForDressType = async (req, res) => {
 
     const boutique = await BoutiqueModel.findById(boutiqueId).lean();
     if (!boutique) {
+      logger.warn(`Boutique not found for ID: ${boutiqueId}`);
       return res.status(404).json({ message: 'Boutique not found' });
     }
 
     const dress = boutique.dressTypes.find(dt => dt.type === dressType);
     if (!dress) {
+      logger.warn(`Dress type '${dressType}' not found in boutique ${boutiqueId}`);
       return res.status(404).json({ message: 'Dress type not found in this boutique' });
     }
 
@@ -1831,11 +2046,13 @@ export const getSizeChartForDressType = async (req, res) => {
     const sizeValues = sizeChart[selectedSize];
 
     if (!sizeValues || typeof sizeValues !== 'object') {
+      logger.warn(`Size '${selectedSize}' not found in size chart for dress type '${dressType}'`);
       return res.status(404).json({ message: `No values found for size '${selectedSize}'` });
     }
 
-    // Convert Map to plain object (if needed)
     const formattedValues = Object.fromEntries(Object.entries(sizeValues));
+
+    logger.info(`Size chart retrieved for user ${userId} - Boutique: ${boutiqueId}, Dress: ${dressType}, Size: ${selectedSize}`);
 
     return res.status(200).json({
       message: `Size chart for ${selectedSize} in ${dressType}`,
@@ -1843,7 +2060,7 @@ export const getSizeChartForDressType = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error fetching size chart:', error);
+    logger.error('❌ Error fetching size chart:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
