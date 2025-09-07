@@ -580,7 +580,7 @@ const boutiquesData = async function (req, res) {
 };
 
 
-export const verifyOtpFB = async (req, res) => {
+const verifyOtpFB = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
@@ -2082,7 +2082,7 @@ export { getRecommendedBoutiques };
 
 export { deleteItemFromCatalogue };
 
-export {boutiqueSearch, Boutiquelogin, verifyOtpFB, viewBoutiqueDetails};
+export {boutiqueSearch, verifyOtpFB, viewBoutiqueDetails};
 
 export {boutiquesData};
 
