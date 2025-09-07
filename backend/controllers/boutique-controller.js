@@ -482,54 +482,59 @@ export const changePassword = async (req, res) => {
   }
 };
 
-const Boutiquelogin = async function (req, res) {
+const OTP_EXPIRATION_TIME = 1; // minutes
+
+// ------------------------------
+// Step 1: Login (Password + Generate OTP)
+// ------------------------------
+export const Boutiquelogin = async (req, res) => {
   try {
     const { name, password, phone } = req.body;
 
     logger.info("Boutiquelogin: Login attempt", { phone });
 
     if (!name || !password || !phone) {
-      logger.warn("Boutiquelogin: Missing credentials", { phone });
       return res.status(400).json({ message: "name, password, phone are required." });
     }
 
-    const Boutique = await BoutiqueModel.findOne({ phone });
-    if (!Boutique) {
-      logger.warn("Boutiquelogin: Boutique not found", { phone });
-      return res.status(404).json({ message: "Boutique Account not found." });
+    const boutique = await BoutiqueModel.findOne({ phone });
+    if (!boutique) {
+      return res.status(404).json({ message: "Boutique account not found." });
     }
 
-    if (Boutique.name !== name) {
-      logger.warn("Boutiquelogin: Invalid name", { boutiqueId: Boutique._id, phone });
+    if (boutique.name !== name) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    const isValidPassword = await bcrypt.compare(password, Boutique.password);
+    const isValidPassword = await bcrypt.compare(password, boutique.password);
     if (!isValidPassword) {
-      logger.warn("Boutiquelogin: Invalid password", { boutiqueId: Boutique._id, phone });
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000);
-    const OTP_EXPIRATION_TIME = 1; // in minutes
+    // ✅ Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit
+    boutique.otp = otp;
+    boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
+    await boutique.save();
 
-    Boutique.otp = otp;
-    Boutique.otpExpiry = Date.now() + OTP_EXPIRATION_TIME * 60 * 1000;
-    await Boutique.save();
+    // ✅ Send OTP via Twilio
+    const result = await sendOTP(phone, otp);
+    if (!result.success) {
+      return res.status(500).json({ message: "Failed to send OTP", error: result.error });
+    }
 
-    logger.info("Boutiquelogin: OTP generated and saved", { boutiqueId: Boutique._id, phone });
+    logger.info("Boutiquelogin: OTP generated and sent", { boutiqueId: boutique._id, phone });
 
-    // Respond with OTP only in development
     res.status(200).json({
-      message: "OTP generated. Please verify to complete login.",
+      message: "OTP sent to your phone. Please verify to complete login.",
       switchToOTPPage: true,
-      boutiqueUserId: Boutique._id,
-      ...(process.env.NODE_ENV === 'development' && { otp })
+      boutiqueUserId: boutique._id,
+      ...(process.env.NODE_ENV === "development" && { otp }) // only show in dev
     });
   } catch (error) {
     logger.error("Boutiquelogin: Login error", {
       error: error.stack || error.message,
-      requestBody: req.body
+      requestBody: req.body,
     });
     res.status(500).json({ message: "An unexpected error occurred during login." });
   }
@@ -575,34 +580,31 @@ const boutiquesData = async function (req, res) {
 };
 
 
-const verifyOtpFB = async (req, res) => {
+export const verifyOtpFB = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
     logger.info("verifyOtpFB: OTP verification requested", { phone });
 
     if (!phone || !otp) {
-      logger.warn("verifyOtpFB: Missing phone or OTP", { phone });
       return res.status(400).json({ message: "Phone number and OTP are required." });
     }
 
     const user = await BoutiqueModel.findOne({ phone });
-
     if (!user) {
-      logger.warn("verifyOtpFB: Boutique not found", { phone });
       return res.status(404).json({ message: "Boutique account not found." });
     }
 
-    if (!user.otp) {
-      logger.warn("verifyOtpFB: OTP is missing or expired", { phone });
+    // ✅ Check OTP + expiry
+    if (!user.otp || Date.now() > user.otpExpiry) {
       return res.status(400).json({ message: "OTP has expired or is invalid." });
     }
 
-    if (otp !== user.otp) {
-      logger.warn("verifyOtpFB: Incorrect OTP", { phone, enteredOtp: otp });
+    if (otp.toString() !== user.otp.toString()) {
       return res.status(400).json({ message: "Invalid OTP. Please try again." });
     }
 
+    // ✅ Generate tokens
     const accessToken = jwt.sign(
       { userId: user._id, name: user.name, role: user.role },
       process.env.ACCESS_TOKEN_SECRET,
@@ -615,29 +617,28 @@ const verifyOtpFB = async (req, res) => {
       { expiresIn: "30d" }
     );
 
+    // 💾 Save refresh token + clear OTP
     user.refreshToken = refreshToken;
     user.otp = null;
     user.otpExpiry = null;
     await user.save();
 
-    logger.info("verifyOtpFB: OTP verified and tokens issued", {
-      boutiqueId: user._id,
-    });
+    logger.info("verifyOtpFB: OTP verified and tokens issued", { boutiqueId: user._id });
 
-    // Send HTTP-only cookies
+    // 🍪 Send HTTP-only cookies
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
       secure: true,
-      sameSite: 'None',
-      domain: 'needles-v1.onrender.com',
+      sameSite: "None",
+      domain: "needles-v1.onrender.com",
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: true,
-      sameSite: 'None',
-      domain: 'needles-v1.onrender.com',
+      sameSite: "None",
+      domain: "needles-v1.onrender.com",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
@@ -648,12 +649,12 @@ const verifyOtpFB = async (req, res) => {
         name: user.name,
         role: user.role,
       },
-      accessToken, // ⚠️ OK in response (optional)
+      accessToken, // optional in body
     });
   } catch (error) {
     logger.error("verifyOtpFB: Internal server error", {
       phone: req.body?.phone,
-      error: error.stack || error.message || error,
+      error: error.stack || error.message,
     });
     res.status(500).json({ message: "Internal server error." });
   }
